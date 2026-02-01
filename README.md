@@ -61,7 +61,3 @@ MIT License
 ## Author
 
 Aleksey Hoffman ([@aleksey-hoffman](https://github.com/aleksey-hoffman))
-
-## Metadata
-
-Repository metadata refresh.
