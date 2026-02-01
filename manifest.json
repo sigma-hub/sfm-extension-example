@@ -1,0 +1,181 @@
+{
+  "$schema": "https://raw.githubusercontent.com/aleksey-hoffman/sigma-file-manager/v2/src/modules/extensions/sdk/manifest.schema.json",
+  "id": "sigma.hello-world",
+  "name": "Example",
+  "previousName": "Hello World",
+  "version": "1.10.0",
+  "description": "An example extension demonstrating context menus, commands, notifications, dialogs, context API, built-in commands, configurable settings, progress reporting, and keybindings.",
+  "author": {
+    "name": "Aleksey Hoffman",
+    "url": "https://github.com/aleksey-hoffman"
+  },
+  "repository": "https://github.com/sigma-hub/sfm-extension-example",
+  "license": "MIT",
+  "icon": "icon.png",
+  "categories": [
+    "Example"
+  ],
+  "tags": [
+    "example"
+  ],
+  "type": "api",
+  "main": "index.js",
+  "permissions": [
+    "contextMenu",
+    "commands",
+    "notifications",
+    "dialogs"
+  ],
+  "contributes": {
+    "configuration": {
+      "title": "Example Extension Settings",
+      "properties": {
+        "greeting": {
+          "type": "string",
+          "default": "Hello",
+          "description": "The greeting message to display"
+        },
+        "showNotifications": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show notifications for actions"
+        },
+        "notificationDuration": {
+          "type": "number",
+          "default": 4000,
+          "minimum": 1000,
+          "maximum": 10000,
+          "description": "Duration of notifications in milliseconds"
+        },
+        "greetingStyle": {
+          "type": "string",
+          "default": "friendly",
+          "enum": [
+            "friendly",
+            "formal",
+            "casual"
+          ],
+          "enumDescriptions": [
+            "Warm and welcoming",
+            "Professional tone",
+            "Relaxed and informal"
+          ],
+          "description": "The style of greeting messages"
+        }
+      }
+    },
+    "commands": [
+      {
+        "id": "greet",
+        "title": "Greet User",
+        "description": "Shows a greeting notification with your name"
+      },
+      {
+        "id": "show-info",
+        "title": "Show Extension Info",
+        "description": "Shows extension and app version information"
+      },
+      {
+        "id": "show-context",
+        "title": "Show Current Context",
+        "description": "Shows current path and selection info using context API"
+      },
+      {
+        "id": "open-file-dialog",
+        "title": "Open File Dialog",
+        "description": "Opens a native file picker dialog"
+      },
+      {
+        "id": "list-builtin-commands",
+        "title": "List Built-in Commands",
+        "description": "Shows available built-in commands"
+      },
+      {
+        "id": "show-settings",
+        "title": "Show Current Settings",
+        "description": "Displays the current extension settings"
+      },
+      {
+        "id": "demo-progress",
+        "title": "Demo Progress API",
+        "description": "Demonstrates the progress notification API with cancellation support"
+      }
+    ],
+    "contextMenu": [
+      {
+        "id": "say-hello",
+        "title": "Say Hello",
+        "icon": "Hand",
+        "group": "extensions",
+        "order": 1
+      },
+      {
+        "id": "count-selected",
+        "title": "Count Selected Items",
+        "icon": "Hash",
+        "group": "extensions",
+        "order": 2,
+        "when": {
+          "selectionType": "multiple"
+        }
+      },
+      {
+        "id": "file-info",
+        "title": "Show File Details",
+        "icon": "Info",
+        "group": "extensions",
+        "order": 3,
+        "when": {
+          "selectionType": "single",
+          "entryType": "file"
+        }
+      },
+      {
+        "id": "copy-path",
+        "title": "Copy Path",
+        "icon": "Copy",
+        "group": "extensions",
+        "order": 4,
+        "when": {
+          "selectionType": "single"
+        }
+      },
+      {
+        "id": "quick-view-file",
+        "title": "Quick View",
+        "icon": "Eye",
+        "group": "extensions",
+        "order": 5,
+        "when": {
+          "selectionType": "single",
+          "entryType": "file"
+        }
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "greet",
+        "key": "ctrl+shift+g",
+        "when": "always"
+      },
+      {
+        "command": "show-context",
+        "key": "ctrl+shift+i",
+        "when": "navigatorFocused"
+      },
+      {
+        "command": "copy-path",
+        "key": "ctrl+alt+c",
+        "when": "singleSelected"
+      },
+      {
+        "command": "demo-progress",
+        "key": "ctrl+shift+d",
+        "when": "always"
+      }
+    ]
+  },
+  "engines": {
+    "sigmaFileManager": ">=2.0.0"
+  }
+}
