@@ -3,8 +3,7 @@
   "id": "sigma.hello-world",
   "name": "Example",
   "previousName": "Hello World",
-  "version": "1.10.0",
-  "description": "An example extension demonstrating context menus, commands, notifications, dialogs, context API, built-in commands, configurable settings, progress reporting, and keybindings.",
+  "version": "1.11.0",
   "author": {
     "name": "Aleksey Hoffman",
     "url": "https://github.com/aleksey-hoffman"
