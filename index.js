@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * Example Extension for Sigma File Manager
  * 

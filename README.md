@@ -26,24 +26,6 @@ A simple demo extension for [Sigma File Manager](https://github.com/aleksey-hoff
 
 - Sigma File Manager v2.0.0 or later
 
-### Setup
-
-1. Clone this repository
-2. The extension is written in plain JavaScript and requires no build step
-3. For TypeScript support, download the type definitions:
-   ```bash
-   curl -O https://raw.githubusercontent.com/aleksey-hoffman/sigma-file-manager/v2/src/modules/extensions/sdk/sigma-extension.d.ts
-   ```
-
-### Project Structure
-
-```
-sfm-extension-example/
-├── manifest.json    # Extension metadata and configuration
-├── index.js         # Main extension code
-├── icon.png         # Extension icon (128x128)
-└── README.md        # This file
-```
 
 ### API Used
 
@@ -56,8 +38,4 @@ This extension demonstrates:
 
 ## License
 
-MIT License
-
-## Author
-
-Aleksey Hoffman ([@aleksey-hoffman](https://github.com/aleksey-hoffman))
+MIT
