@@ -153,8 +153,30 @@ async function activate(context) {
   );
 
   sigma.commands.registerCommand(
-    { id: 'greet', title: 'Greet User' },
-    async () => {
+    {
+      id: 'greet',
+      title: 'Greet User',
+      description: 'Shows a greeting notification with your name',
+      arguments: [
+        {
+          name: 'name',
+          type: 'text',
+          placeholder: 'Enter your name',
+          required: true,
+        },
+        {
+          name: 'style',
+          type: 'dropdown',
+          placeholder: 'Greeting style',
+          data: [
+            { title: 'Friendly', value: 'friendly' },
+            { title: 'Formal', value: 'formal' },
+            { title: 'Casual', value: 'casual' },
+          ],
+        },
+      ],
+    },
+    async (args) => {
       const showNotifications = await sigma.settings.get('showNotifications');
       if (!showNotifications) {
         console.log('[Example] Notifications disabled');
@@ -163,7 +185,20 @@ async function activate(context) {
 
       const greeting = await sigma.settings.get('greeting');
       const duration = await sigma.settings.get('notificationDuration');
-      const style = await sigma.settings.get('greetingStyle');
+      const settingsStyle = await sigma.settings.get('greetingStyle');
+      const providedArgs = args && typeof args === 'object' ? args : {};
+      const name = providedArgs.name || null;
+      const style = providedArgs.style || settingsStyle;
+
+      if (name) {
+        sigma.ui.showNotification({
+          title: greeting || 'Hello',
+          message: getGreetingByStyle(style, name),
+          type: 'success',
+          duration: duration || 5000
+        });
+        return;
+      }
 
       const result = await sigma.ui.showDialog({
         title: greeting || 'Hello',
@@ -348,6 +383,187 @@ async function activate(context) {
             type: 'error'
           });
         }
+      }
+    }
+  );
+
+  sigma.contextMenu.registerItem(
+    {
+      id: 'analyze-file-deno',
+      title: 'Analyze File with Deno',
+      icon: 'FileSearch',
+      group: 'extensions',
+      order: 6,
+      when: {
+        selectionType: 'single',
+        entryType: 'file'
+      }
+    },
+    async (menuContext) => {
+      const file = menuContext.selectedEntries[0];
+      if (!file) {
+        return;
+      }
+
+      const escapedPath = file.path.replace(/\\/g, '\\\\');
+      const denoScript = `
+        const filePath = "${escapedPath}";
+        const data = await Deno.readFile(filePath);
+        const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        const hashHex = hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
+        const textContent = new TextDecoder().decode(data);
+        const lineCount = textContent.split("\\n").length;
+        const sizeBytes = data.byteLength;
+        console.log(JSON.stringify({ hash: hashHex, lines: lineCount, sizeBytes }));
+      `;
+
+      try {
+        const result = await sigma.shell.run('deno', ['eval', denoScript]);
+
+        if (result.code !== 0) {
+          sigma.ui.showNotification({
+            title: 'Analysis Failed',
+            message: result.stderr || 'Deno exited with an error',
+            type: 'error'
+          });
+          return;
+        }
+
+        const analysis = JSON.parse(result.stdout.trim());
+        const sizeFormatted = analysis.sizeBytes < 1024
+          ? `${analysis.sizeBytes} B`
+          : analysis.sizeBytes < 1048576
+            ? `${(analysis.sizeBytes / 1024).toFixed(2)} KB`
+            : `${(analysis.sizeBytes / 1048576).toFixed(2)} MB`;
+
+        await sigma.ui.showDialog({
+          title: `File Analysis: ${file.name}`,
+          message: [
+            `SHA-256: ${analysis.hash}`,
+            `Lines: ${analysis.lines}`,
+            `Size: ${sizeFormatted}`,
+          ].join('\n'),
+          type: 'info',
+          confirmText: 'OK'
+        });
+      } catch (error) {
+        sigma.ui.showNotification({
+          title: 'Analysis Error',
+          message: error.message || 'Failed to analyze file with Deno',
+          type: 'error'
+        });
+      }
+    }
+  );
+
+  sigma.commands.registerCommand(
+    {
+      id: 'deno-eval',
+      title: 'Run Deno Eval',
+      description: 'Evaluates a JavaScript expression using Deno and shows the result',
+      arguments: [
+        {
+          name: 'expression',
+          type: 'text',
+          placeholder: 'Enter a JavaScript expression (e.g. 2 + 2)',
+          required: true,
+        },
+      ],
+    },
+    async (args) => {
+      const providedArgs = args && typeof args === 'object' ? args : {};
+      const expression = providedArgs.expression;
+
+      if (!expression) {
+        sigma.ui.showNotification({
+          title: 'Deno Eval',
+          message: 'No expression provided',
+          type: 'warning'
+        });
+        return;
+      }
+
+      try {
+        const result = await sigma.shell.run('deno', ['eval', `console.log(${expression})`]);
+
+        if (result.code !== 0) {
+          await sigma.ui.showDialog({
+            title: 'Deno Eval - Error',
+            message: result.stderr || 'Deno exited with a non-zero code',
+            type: 'error',
+            confirmText: 'OK'
+          });
+          return;
+        }
+
+        await sigma.ui.showDialog({
+          title: 'Deno Eval - Result',
+          message: `Expression: ${expression}\n\nOutput:\n${result.stdout.trim()}`,
+          type: 'info',
+          confirmText: 'OK'
+        });
+      } catch (error) {
+        sigma.ui.showNotification({
+          title: 'Deno Eval Error',
+          message: error.message || 'Failed to run Deno',
+          type: 'error'
+        });
+      }
+    }
+  );
+
+  sigma.commands.registerCommand(
+    { id: 'deno-system-info', title: 'Show Deno System Info', description: 'Displays system information reported by Deno' },
+    async () => {
+      try {
+        const denoScript = `
+          const info = {
+            os: Deno.build.os,
+            arch: Deno.build.arch,
+            denoVersion: Deno.version.deno,
+            v8Version: Deno.version.v8,
+            typescriptVersion: Deno.version.typescript,
+            hostname: Deno.hostname(),
+            homeDir: Deno.env.get("HOME") || Deno.env.get("USERPROFILE"),
+          };
+          console.log(JSON.stringify(info));
+        `;
+
+        const result = await sigma.shell.run('deno', ['eval', '--unstable', denoScript]);
+
+        if (result.code !== 0) {
+          sigma.ui.showNotification({
+            title: 'Deno System Info',
+            message: result.stderr || 'Failed to get system info',
+            type: 'error'
+          });
+          return;
+        }
+
+        const info = JSON.parse(result.stdout.trim());
+        const infoText = [
+          `OS: ${info.os}`,
+          `Architecture: ${info.arch}`,
+          `Deno: v${info.denoVersion}`,
+          `V8: v${info.v8Version}`,
+          `TypeScript: v${info.typescriptVersion}`,
+          `Hostname: ${info.hostname}`,
+          `Home: ${info.homeDir}`,
+        ].join('\n');
+
+        await sigma.ui.showDialog({
+          title: 'Deno System Info',
+          message: infoText,
+          type: 'info',
+          confirmText: 'OK'
+        });
+      } catch (error) {
+        sigma.ui.showNotification({
+          title: 'Deno System Info',
+          message: error.message || 'Deno is not installed or not in PATH',
+          type: 'error'
+        });
       }
     }
   );
