@@ -1,32 +1,256 @@
 // @ts-check
-/**
- * Example Extension for Sigma File Manager
- * 
- * This is a demo extension that demonstrates how to:
- * - Add items to the context menu
- * - Register and execute commands
- * - Show notifications
- * - Show dialogs
- * - Access app context (current path, selected entries)
- * - Execute built-in commands (navigate, open dialogs)
- * - Use configurable settings (via sigma.settings API)
- * - Show progress for long-running operations (via sigma.ui.withProgress)
- */
-
-function getGreetingByStyle(style, name) {
-  switch (style) {
-    case 'formal':
-      return `Good day, ${name}. How may I assist you?`;
-    case 'casual':
-      return `Hey ${name}! What's up?`;
-    case 'friendly':
-    default:
-      return `Hello, ${name}! Nice to see you!`;
-  }
-}
 
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function getErrorMessage(error) {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+  return String(error);
+}
+
+function isCommandNotFoundError(error) {
+  const errorMessage = getErrorMessage(error).toLowerCase();
+  return (
+    errorMessage.includes('not found')
+    || errorMessage.includes('does not exist')
+    || errorMessage.includes('cannot find')
+  );
+}
+
+function escapeForPowerShellSingleQuotes(text) {
+  return String(text).replace(/'/g, "''");
+}
+
+function getWindowsPowerShellCandidates(script) {
+  return [
+    { command: 'powershell', args: ['-NoProfile', '-Command', script] },
+    { command: 'pwsh', args: ['-NoProfile', '-Command', script] },
+    { command: 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe', args: ['-NoProfile', '-Command', script] },
+  ];
+}
+
+async function runPowerShellScript(script, options = {}) {
+  if (!sigma.platform.isWindows) {
+    throw new Error('PowerShell script execution is only supported on Windows.');
+  }
+
+  const timeout = typeof options.timeout === 'number' && options.timeout > 0
+    ? options.timeout
+    : 10000;
+  const parseOutput = typeof options.parseOutput === 'function'
+    ? options.parseOutput
+    : ({ stdout }) => stdout;
+  const commandCandidates = getWindowsPowerShellCandidates(script);
+  let latestError = null;
+
+  for (const commandCandidate of commandCandidates) {
+    let timeoutHandle = null;
+    let timedOut = false;
+    let abortSignalListener = null;
+    let runningCommand = null;
+
+    try {
+      runningCommand = await sigma.shell.runWithProgress(
+        commandCandidate.command,
+        commandCandidate.args,
+        () => {},
+      );
+
+      if (timeout > 0) {
+        timeoutHandle = setTimeout(() => {
+          timedOut = true;
+          if (runningCommand) {
+            runningCommand.cancel().catch(() => {});
+          }
+        }, timeout);
+      }
+
+      if (options.signal) {
+        abortSignalListener = () => {
+          if (runningCommand) {
+            runningCommand.cancel().catch(() => {});
+          }
+        };
+
+        if (options.signal.aborted) {
+          abortSignalListener();
+        } else {
+          options.signal.addEventListener('abort', abortSignalListener, { once: true });
+        }
+      }
+
+      const result = await runningCommand.result;
+      const commandText = `${commandCandidate.command} ${commandCandidate.args.join(' ')}`;
+      const executionError = result.code === 0
+        ? undefined
+        : new Error(result.stderr || `${commandCandidate.command} exited with code ${result.code}`);
+
+      if (result.code !== 0) {
+        throw executionError;
+      }
+
+      return parseOutput({
+        stdout: result.stdout,
+        stderr: result.stderr,
+        error: executionError,
+        exitCode: result.code,
+        signal: null,
+        timedOut,
+        command: commandText,
+      });
+    } catch (error) {
+      latestError = error;
+      if (isCommandNotFoundError(error)) {
+        continue;
+      }
+      throw error;
+    } finally {
+      if (timeoutHandle) {
+        clearTimeout(timeoutHandle);
+      }
+      if (options.signal && abortSignalListener) {
+        options.signal.removeEventListener('abort', abortSignalListener);
+      }
+    }
+  }
+
+  throw latestError || new Error('No available PowerShell command candidates');
+}
+
+function formatFileSize(sizeBytes) {
+  if (sizeBytes == null) return 'Unknown';
+  if (sizeBytes < 1024) return `${sizeBytes} B`;
+  if (sizeBytes < 1048576) return `${(sizeBytes / 1024).toFixed(2)} KB`;
+  return `${(sizeBytes / 1048576).toFixed(2)} MB`;
+}
+
+function showFileAnalysisModal(fileName, hashValue, lineCount, sizeText) {
+  sigma.ui.createModal({
+    title: `File analysis: ${fileName}`,
+    width: 760,
+    content: [
+      sigma.ui.input({
+        id: 'lineCount',
+        label: 'Lines',
+        value: String(lineCount),
+        disabled: true,
+      }),
+      sigma.ui.input({
+        id: 'fileSize',
+        label: 'Size',
+        value: sizeText,
+        disabled: true,
+      }),
+      sigma.ui.input({
+        id: 'fileHash',
+        label: 'SHA-256 Hash',
+        value: hashValue,
+        disabled: true,
+      }),
+    ],
+  });
+}
+
+async function runFirstAvailableCommand(commandCandidates) {
+  let latestError = null;
+
+  for (const commandCandidate of commandCandidates) {
+    try {
+      const result = await sigma.shell.run(commandCandidate.command, commandCandidate.args);
+      return { result, commandName: commandCandidate.command };
+    } catch (error) {
+      latestError = error;
+      if (isCommandNotFoundError(error)) {
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  throw latestError || new Error('No available command candidates');
+}
+
+async function getDenoCommandCandidates(denoArgs) {
+  const commandCandidates = [];
+  const addedCommands = new Set();
+
+  try {
+    const denoBinaryPath = await sigma.binary.getPath('deno');
+    if (denoBinaryPath && !addedCommands.has(denoBinaryPath)) {
+      commandCandidates.push({ command: denoBinaryPath, args: denoArgs });
+      addedCommands.add(denoBinaryPath);
+    }
+  } catch {
+  }
+
+  if (!addedCommands.has('deno')) {
+    commandCandidates.push({ command: 'deno', args: denoArgs });
+  }
+
+  return commandCandidates;
+}
+
+async function runFirstAvailableCommandWithProgress(commandCandidates, progress, cancellationToken) {
+  let latestError = null;
+  let progressValue = 8;
+
+  for (const commandCandidate of commandCandidates) {
+    if (cancellationToken.isCancellationRequested) {
+      return { cancelled: true };
+    }
+
+    try {
+      progress.report({
+        description: `Running ${commandCandidate.command}...`,
+        increment: progressValue,
+      });
+      progressValue = 0;
+
+      const runningCommand = await sigma.shell.runWithProgress(
+        commandCandidate.command,
+        commandCandidate.args,
+        () => {
+          if (!cancellationToken.isCancellationRequested) {
+            progress.report({
+              description: `Analyzing with ${commandCandidate.command}...`,
+              increment: 0.4,
+            });
+          }
+        },
+      );
+
+      const cancellationListener = cancellationToken.onCancellationRequested(() => {
+        runningCommand.cancel().catch(() => {});
+      });
+
+      try {
+        const result = await runningCommand.result;
+        return {
+          cancelled: false,
+          result,
+          commandName: commandCandidate.command,
+        };
+      } finally {
+        cancellationListener.dispose();
+      }
+    } catch (error) {
+      latestError = error;
+
+      if (cancellationToken.isCancellationRequested) {
+        return { cancelled: true };
+      }
+
+      if (isCommandNotFoundError(error)) {
+        continue;
+      }
+
+      throw error;
+    }
+  }
+
+  throw latestError || new Error('No available command candidates');
 }
 
 async function activate(context) {
@@ -38,6 +262,9 @@ async function activate(context) {
 
   const settings = await sigma.settings.getAll();
   console.log('[Example] Current settings:', settings);
+  const jsonToolsScriptPath = sigma.platform.joinPath(context.extensionPath, 'scripts', 'json-tools.js');
+  const fileAnalysisScriptPath = sigma.platform.joinPath(context.extensionPath, 'scripts', 'file-analysis.js');
+  const runtimeInfoScriptPath = sigma.platform.joinPath(context.extensionPath, 'scripts', 'runtime-info.js');
 
   sigma.settings.onChange('showNotifications', (newValue, oldValue) => {
     console.log(`[Example] showNotifications changed from ${oldValue} to ${newValue}`);
@@ -45,9 +272,9 @@ async function activate(context) {
 
   sigma.contextMenu.registerItem(
     {
-      id: 'say-hello',
-      title: 'Say Hello',
-      icon: 'Hand',
+      id: 'example-notification',
+      title: 'Example notification',
+      icon: 'Bell',
       group: 'extensions',
       order: 1
     },
@@ -58,14 +285,13 @@ async function activate(context) {
         return;
       }
 
-      const greeting = await sigma.settings.get('greeting');
       const duration = await sigma.settings.get('notificationDuration');
-      const style = await sigma.settings.get('greetingStyle');
-      const firstName = menuContext.selectedEntries[0]?.name || 'there';
-      
+      const entry = menuContext.selectedEntries[0];
+
       sigma.ui.showNotification({
-        title: greeting || 'Hello',
-        message: getGreetingByStyle(style, firstName),
+        title: 'Extension notification',
+        subtitle: 'Action triggered from context menu',
+        description: entry ? entry.name : '',
         type: 'info',
         duration: duration || 3000
       });
@@ -75,7 +301,7 @@ async function activate(context) {
   sigma.contextMenu.registerItem(
     {
       id: 'count-selected',
-      title: 'Count Selected Items',
+      title: 'Count selected items',
       icon: 'Hash',
       group: 'extensions',
       order: 2,
@@ -85,12 +311,12 @@ async function activate(context) {
     },
     async (menuContext) => {
       const count = menuContext.selectedEntries.length;
-      const files = menuContext.selectedEntries.filter(e => !e.isDirectory).length;
-      const folders = menuContext.selectedEntries.filter(e => e.isDirectory).length;
-      
+      const files = menuContext.selectedEntries.filter(entry => !entry.isDirectory).length;
+      const folders = menuContext.selectedEntries.filter(entry => entry.isDirectory).length;
+
       sigma.ui.showNotification({
-        title: 'Selection Count',
-        message: `Selected ${count} items: ${files} files, ${folders} folders`,
+        title: 'Selection count',
+        subtitle: `Selected ${count} items: ${files} files, ${folders} folders`,
         type: 'success',
         duration: 4000
       });
@@ -100,7 +326,7 @@ async function activate(context) {
   sigma.contextMenu.registerItem(
     {
       id: 'file-info',
-      title: 'Show File Details',
+      title: 'Show file details',
       icon: 'Info',
       group: 'extensions',
       order: 3,
@@ -111,24 +337,25 @@ async function activate(context) {
     },
     async (menuContext) => {
       const file = menuContext.selectedEntries[0];
-      
-      if (file) {
-        const sizeKB = file.size ? (file.size / 1024).toFixed(2) : 'Unknown';
-        
-        await sigma.ui.showDialog({
-          title: 'File Details',
-          message: `Name: ${file.name}\nPath: ${file.path}\nExtension: ${file.extension || 'None'}\nSize: ${sizeKB} KB`,
-          type: 'info',
-          confirmText: 'OK'
-        });
-      }
+      if (!file) return;
+
+      sigma.ui.createModal({
+        title: `File details: ${file.name}`,
+        width: 640,
+        content: [
+          sigma.ui.input({ id: 'name', label: 'Name', value: file.name, disabled: true }),
+          sigma.ui.input({ id: 'path', label: 'Path', value: file.path, disabled: true }),
+          sigma.ui.input({ id: 'extension', label: 'Extension', value: file.extension || 'None', disabled: true }),
+          sigma.ui.input({ id: 'size', label: 'Size', value: formatFileSize(file.size), disabled: true }),
+        ],
+      });
     }
   );
 
   sigma.contextMenu.registerItem(
     {
       id: 'copy-path',
-      title: 'Copy Path',
+      title: 'Copy path',
       icon: 'Copy',
       group: 'extensions',
       order: 4,
@@ -138,13 +365,14 @@ async function activate(context) {
     },
     async (menuContext) => {
       const entry = menuContext.selectedEntries[0];
-      
+
       if (entry) {
         await navigator.clipboard.writeText(entry.path);
-        
+
         sigma.ui.showNotification({
-          title: 'Path Copied',
-          message: `Copied to clipboard: ${entry.path}`,
+          title: 'Path copied',
+          subtitle: 'Copied to clipboard',
+          description: entry.path,
           type: 'success',
           duration: 2000
         });
@@ -153,125 +381,78 @@ async function activate(context) {
   );
 
   sigma.commands.registerCommand(
-    {
-      id: 'greet',
-      title: 'Greet User',
-      description: 'Shows a greeting notification with your name',
-      arguments: [
-        {
-          name: 'name',
-          type: 'text',
-          placeholder: 'Enter your name',
-          required: true,
-        },
-        {
-          name: 'style',
-          type: 'dropdown',
-          placeholder: 'Greeting style',
-          data: [
-            { title: 'Friendly', value: 'friendly' },
-            { title: 'Formal', value: 'formal' },
-            { title: 'Casual', value: 'casual' },
-          ],
-        },
-      ],
-    },
-    async (args) => {
-      const showNotifications = await sigma.settings.get('showNotifications');
-      if (!showNotifications) {
-        console.log('[Example] Notifications disabled');
-        return;
-      }
-
-      const greeting = await sigma.settings.get('greeting');
-      const duration = await sigma.settings.get('notificationDuration');
-      const settingsStyle = await sigma.settings.get('greetingStyle');
-      const providedArgs = args && typeof args === 'object' ? args : {};
-      const name = providedArgs.name || null;
-      const style = providedArgs.style || settingsStyle;
-
-      if (name) {
-        sigma.ui.showNotification({
-          title: greeting || 'Hello',
-          message: getGreetingByStyle(style, name),
-          type: 'success',
-          duration: duration || 5000
-        });
-        return;
-      }
-
-      const result = await sigma.ui.showDialog({
-        title: greeting || 'Hello',
-        message: 'What is your name?',
-        type: 'prompt',
-        defaultValue: 'World',
-        confirmText: 'Greet Me',
-        cancelText: 'Cancel'
-      });
-
-      if (result.confirmed && result.value) {
-        sigma.ui.showNotification({
-          title: greeting || 'Hello',
-          message: getGreetingByStyle(style, result.value),
-          type: 'success',
-          duration: duration || 5000
-        });
-      }
-    }
-  );
-
-  sigma.commands.registerCommand(
-    { id: 'show-info', title: 'Show Extension Info' },
+    { id: 'show-settings', title: 'Show current settings', description: 'Displays the current extension settings' },
     async () => {
-      const appVersion = await sigma.context.getAppVersion();
-      const duration = await sigma.settings.get('notificationDuration');
-      sigma.ui.showNotification({
-        title: 'Example Extension',
-        message: `Version 1.10.0 - Running on Sigma File Manager v${appVersion}`,
-        type: 'info',
-        duration: duration || 4000
+      const allSettings = await sigma.settings.getAll();
+      const settingsContent = [];
+
+      for (const [key, value] of Object.entries(allSettings)) {
+        settingsContent.push(
+          sigma.ui.input({
+            id: key,
+            label: key,
+            value: String(value),
+            disabled: true,
+          })
+        );
+      }
+
+      sigma.ui.createModal({
+        title: 'Extension settings',
+        width: 640,
+        content: [
+          sigma.ui.text('Current configuration for this extension. You can change these in Settings > Extensions.'),
+          sigma.ui.separator(),
+          ...settingsContent,
+        ],
       });
     }
   );
 
   sigma.commands.registerCommand(
-    { id: 'show-settings', title: 'Show Current Settings', description: 'Displays the current extension settings' },
-    async () => {
-      const settings = await sigma.settings.getAll();
-      const settingsText = Object.entries(settings)
-        .map(([key, value]) => `${key}: ${JSON.stringify(value)}`)
-        .join('\n');
-
-      await sigma.ui.showDialog({
-        title: 'Example Extension Settings',
-        message: `Current settings:\n\n${settingsText}\n\nYou can change these in Settings > Extensions.`,
-        type: 'info',
-        confirmText: 'OK'
-      });
-    }
-  );
-
-  sigma.commands.registerCommand(
-    { id: 'show-context', title: 'Show Current Context', description: 'Shows current path and selection info' },
+    { id: 'show-context', title: 'Show current context', description: 'Shows current path and selection info' },
     () => {
       const currentPath = sigma.context.getCurrentPath();
       const selectedEntries = sigma.context.getSelectedEntries();
 
-      const message = selectedEntries.length > 0
-        ? `Path: ${currentPath}\nSelected: ${selectedEntries.length} items\nFirst: ${selectedEntries[0].name}`
-        : `Path: ${currentPath}\nNo items selected`;
+      const content = [
+        sigma.ui.input({ id: 'currentPath', label: 'Current Path', value: currentPath || 'N/A', disabled: true }),
+        sigma.ui.separator(),
+        sigma.ui.input({ id: 'selectedCount', label: 'Selected Items', value: String(selectedEntries.length), disabled: true }),
+      ];
 
-      sigma.ui.showDialog({
-        title: 'Current Context',
-        message: message,
-        type: 'info',
-        confirmText: 'OK'
+      if (selectedEntries.length > 0) {
+        content.push(sigma.ui.separator());
+        const maxDisplay = Math.min(selectedEntries.length, 2);
+        for (let entryIndex = 0; entryIndex < maxDisplay; entryIndex++) {
+          const entry = selectedEntries[entryIndex];
+          const entryTypeLabel = entry.isDirectory ? 'Directory' : 'File';
+          content.push(
+            sigma.ui.input({
+              id: `entry-${entryIndex}`,
+              label: entryTypeLabel,
+              value: entry.path,
+              disabled: true,
+            })
+          );
+        }
+        if (selectedEntries.length > maxDisplay) {
+          const hiddenEntriesCount = selectedEntries.length - maxDisplay;
+          const hiddenEntriesLabel = hiddenEntriesCount === 1 ? 'entry' : 'entries';
+          content.push(sigma.ui.text(`${hiddenEntriesCount} more selected ${hiddenEntriesLabel} not shown`));
+        }
+      }
+
+      sigma.ui.createModal({
+        title: 'Current context',
+        width: 720,
+        content,
       });
     }
   );
 
   sigma.commands.registerCommand(
-    { id: 'open-file-dialog', title: 'Open File Dialog', description: 'Opens a native file picker' },
+    { id: 'open-file-dialog', title: 'Open file dialog', description: 'Opens a native file picker' },
     async () => {
       const result = await sigma.dialog.openFile({
         title: 'Select a file',
@@ -283,8 +464,9 @@ async function activate(context) {
 
       if (result) {
         sigma.ui.showNotification({
-          title: 'File Selected',
-          message: `You selected: ${Array.isArray(result) ? result.join(', ') : result}`,
+          title: 'File selected',
+          subtitle: 'You selected',
+          description: Array.isArray(result) ? result.join(', ') : result,
           type: 'success'
         });
       }
@@ -292,37 +474,20 @@ async function activate(context) {
   );
 
   sigma.commands.registerCommand(
-    { id: 'list-builtin-commands', title: 'List Built-in Commands', description: 'Shows available built-in commands' },
-    async () => {
-      const commands = sigma.commands.getBuiltinCommands();
-      const commandList = commands.map(cmd => `• ${cmd.id}`).join('\n');
-
-      await sigma.ui.showDialog({
-        title: 'Built-in Commands',
-        message: `Available commands:\n\n${commandList}`,
-        type: 'info',
-        confirmText: 'OK'
-      });
-    }
-  );
-
-  sigma.commands.registerCommand(
-    { id: 'demo-progress', title: 'Demo Progress API', description: 'Demonstrates the progress notification API' },
+    { id: 'demo-progress', title: 'Demo progress API', description: 'Demonstrates the progress notification API' },
     async () => {
       const totalItems = 10;
       let processedItems = 0;
-      let wasCancelled = false;
 
       const result = await sigma.ui.withProgress(
         {
-          title: 'Processing Items...',
+          subtitle: 'Processing',
           location: 'notification',
           cancellable: true
         },
         async (progress, token) => {
           token.onCancellationRequested(() => {
             console.log('[Example] Progress cancelled by user');
-            wasCancelled = true;
           });
 
           for (let itemIndex = 0; itemIndex < totalItems; itemIndex++) {
@@ -331,7 +496,7 @@ async function activate(context) {
             }
 
             progress.report({
-              message: `Processing item ${itemIndex + 1} of ${totalItems}`,
+              description: `Item ${itemIndex + 1} of ${totalItems}`,
               increment: 100 / totalItems
             });
 
@@ -339,20 +504,20 @@ async function activate(context) {
             processedItems++;
           }
 
+          progress.report({
+            subtitle: 'Processed',
+            description: `${processedItems} items`,
+            increment: 100,
+          });
+
           return { completed: true, processed: processedItems };
         }
       );
 
-      if (result.completed) {
+      if (!result.completed) {
         sigma.ui.showNotification({
-          title: 'Processing Complete',
-          message: `Successfully processed ${result.processed} items!`,
-          type: 'success'
-        });
-      } else {
-        sigma.ui.showNotification({
-          title: 'Processing Cancelled',
-          message: `Processed ${result.processed} of ${totalItems} items before cancellation.`,
+          title: 'Processing cancelled',
+          subtitle: `Processed ${result.processed} of ${totalItems} items before cancellation.`,
           type: 'warning'
         });
       }
@@ -361,39 +526,11 @@ async function activate(context) {
 
   sigma.contextMenu.registerItem(
     {
-      id: 'quick-view-file',
-      title: 'Quick View',
-      icon: 'Eye',
-      group: 'extensions',
-      order: 5,
-      when: {
-        selectionType: 'single',
-        entryType: 'file'
-      }
-    },
-    async (menuContext) => {
-      const file = menuContext.selectedEntries[0];
-      if (file) {
-        try {
-          await sigma.commands.executeCommand('sigma.quickView.open', file.path);
-        } catch (err) {
-          sigma.ui.showNotification({
-            title: 'Quick View Error',
-            message: err.message || 'Could not open quick view',
-            type: 'error'
-          });
-        }
-      }
-    }
-  );
-
-  sigma.contextMenu.registerItem(
-    {
       id: 'analyze-file-deno',
-      title: 'Analyze File with Deno',
+      title: 'Analyze file with Deno',
       icon: 'FileSearch',
       group: 'extensions',
-      order: 6,
+      order: 5,
       when: {
         selectionType: 'single',
         entryType: 'file'
@@ -405,52 +542,70 @@ async function activate(context) {
         return;
       }
 
-      const escapedPath = file.path.replace(/\\/g, '\\\\');
-      const denoScript = `
-        const filePath = "${escapedPath}";
-        const data = await Deno.readFile(filePath);
-        const hashBuffer = await crypto.subtle.digest("SHA-256", data);
-        const hashArray = Array.from(new Uint8Array(hashBuffer));
-        const hashHex = hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
-        const textContent = new TextDecoder().decode(data);
-        const lineCount = textContent.split("\\n").length;
-        const sizeBytes = data.byteLength;
-        console.log(JSON.stringify({ hash: hashHex, lines: lineCount, sizeBytes }));
-      `;
+      const powerShellPath = escapeForPowerShellSingleQuotes(file.path);
+      const powerShellScript = `$targetPath = '${powerShellPath}'; $hash = (Get-FileHash -LiteralPath $targetPath -Algorithm SHA256).Hash.ToLower(); $lineCount = (Get-Content -LiteralPath $targetPath | Measure-Object -Line).Lines; $sizeBytes = (Get-Item -LiteralPath $targetPath).Length; [PSCustomObject]@{ hash = $hash; lines = [int]$lineCount; sizeBytes = [int64]$sizeBytes } | ConvertTo-Json -Compress`;
 
       try {
-        const result = await sigma.shell.run('deno', ['eval', denoScript]);
+        const fallbackCandidates = sigma.platform.isWindows
+          ? getWindowsPowerShellCandidates(powerShellScript)
+          : [];
+        const analysisExecution = await sigma.ui.withProgress(
+          {
+            subtitle: `Analyzing ${file.name}`,
+            location: 'notification',
+            cancellable: true,
+          },
+          async (progress, cancellationToken) => {
+            progress.report({
+              description: 'Preparing analysis...',
+              increment: 6,
+            });
+
+            try {
+              const executionResult = await runFirstAvailableCommandWithProgress(
+                [
+                  ...(await getDenoCommandCandidates(['run', '--quiet', '--allow-read', fileAnalysisScriptPath, file.path])),
+                  ...fallbackCandidates,
+                ],
+                progress,
+                cancellationToken,
+              );
+              return executionResult;
+            } catch (error) {
+              if (cancellationToken.isCancellationRequested) {
+                return { cancelled: true };
+              }
+              throw error;
+            }
+          },
+        );
+
+        if (analysisExecution.cancelled) {
+          sigma.ui.showNotification({
+            title: 'Analysis cancelled',
+            subtitle: `Stopped analyzing ${file.name}`,
+            type: 'warning'
+          });
+          return;
+        }
+
+        const { result, commandName } = analysisExecution;
 
         if (result.code !== 0) {
           sigma.ui.showNotification({
-            title: 'Analysis Failed',
-            message: result.stderr || 'Deno exited with an error',
+            title: 'Analysis failed',
+            subtitle: result.stderr || `${commandName} exited with an error`,
             type: 'error'
           });
           return;
         }
 
         const analysis = JSON.parse(result.stdout.trim());
-        const sizeFormatted = analysis.sizeBytes < 1024
-          ? `${analysis.sizeBytes} B`
-          : analysis.sizeBytes < 1048576
-            ? `${(analysis.sizeBytes / 1024).toFixed(2)} KB`
-            : `${(analysis.sizeBytes / 1048576).toFixed(2)} MB`;
-
-        await sigma.ui.showDialog({
-          title: `File Analysis: ${file.name}`,
-          message: [
-            `SHA-256: ${analysis.hash}`,
-            `Lines: ${analysis.lines}`,
-            `Size: ${sizeFormatted}`,
-          ].join('\n'),
-          type: 'info',
-          confirmText: 'OK'
-        });
+        showFileAnalysisModal(file.name, analysis.hash, analysis.lines, formatFileSize(analysis.sizeBytes));
       } catch (error) {
         sigma.ui.showNotification({
-          title: 'Analysis Error',
-          message: error.message || 'Failed to analyze file with Deno',
+          title: 'Analysis error',
+          subtitle: getErrorMessage(error) || 'Failed to analyze file',
           type: 'error'
         });
       }
@@ -459,109 +614,246 @@ async function activate(context) {
 
   sigma.commands.registerCommand(
     {
-      id: 'deno-eval',
-      title: 'Run Deno Eval',
-      description: 'Evaluates a JavaScript expression using Deno and shows the result',
-      arguments: [
-        {
-          name: 'expression',
-          type: 'text',
-          placeholder: 'Enter a JavaScript expression (e.g. 2 + 2)',
-          required: true,
-        },
-      ],
+      id: 'deno-json-tools',
+      title: 'Run Deno JSON tools',
+      description: 'Validates, formats, or minifies JSON using a bundled Deno script',
     },
-    async (args) => {
-      const providedArgs = args && typeof args === 'object' ? args : {};
-      const expression = providedArgs.expression;
-
-      if (!expression) {
-        sigma.ui.showNotification({
-          title: 'Deno Eval',
-          message: 'No expression provided',
-          type: 'warning'
+    async () => {
+      return new Promise((resolve) => {
+        const modal = sigma.ui.createModal({
+          title: 'Deno JSON tools',
+          width: 720,
+          content: [
+            sigma.ui.select({
+              id: 'action',
+              label: 'Action',
+              options: [
+                { value: 'validate', label: 'Validate JSON' },
+                { value: 'pretty', label: 'Pretty Print' },
+                { value: 'minify', label: 'Minify' },
+              ],
+              value: 'validate',
+            }),
+            sigma.ui.textarea({
+              id: 'jsonInput',
+              label: 'JSON',
+              placeholder: '{\n  "name": "Sigma"\n}',
+              rows: 10,
+            }),
+            sigma.ui.textarea({
+              id: 'resultOutput',
+              label: 'Result',
+              value: '',
+              rows: 8,
+              disabled: true,
+            }),
+          ],
+          buttons: [
+            { id: 'run', label: 'Run', variant: 'primary', shortcut: { key: 'Enter', modifiers: ['ctrl'] } },
+          ],
         });
-        return;
-      }
 
-      try {
-        const result = await sigma.shell.run('deno', ['eval', `console.log(${expression})`]);
+        modal.onSubmit(async (values, buttonId) => {
+          if (buttonId !== 'run') return false;
 
-        if (result.code !== 0) {
-          await sigma.ui.showDialog({
-            title: 'Deno Eval - Error',
-            message: result.stderr || 'Deno exited with a non-zero code',
-            type: 'error',
-            confirmText: 'OK'
-          });
-          return;
-        }
+          const action = typeof values.action === 'string' ? values.action : 'validate';
+          const jsonInput = typeof values.jsonInput === 'string' ? values.jsonInput.trim() : '';
 
-        await sigma.ui.showDialog({
-          title: 'Deno Eval - Result',
-          message: `Expression: ${expression}\n\nOutput:\n${result.stdout.trim()}`,
-          type: 'info',
-          confirmText: 'OK'
+          if (!jsonInput) {
+            modal.updateElement('resultOutput', {
+              value: 'JSON input is required.',
+            });
+            return false;
+          }
+
+          try {
+            const escapedJsonInput = escapeForPowerShellSingleQuotes(jsonInput);
+            const escapedAction = escapeForPowerShellSingleQuotes(action);
+            const powerShellJsonToolsScript = `$jsonInput = '${escapedJsonInput}'; $action = '${escapedAction}'; try { $parsed = $jsonInput | ConvertFrom-Json; switch ($action) { 'validate' { $output = 'JSON is valid.' } 'pretty' { $output = $parsed | ConvertTo-Json -Depth 100 } 'minify' { $output = ($parsed | ConvertTo-Json -Depth 100 -Compress) } default { throw "Unsupported action: $action" } }; [PSCustomObject]@{ output = [string]$output } | ConvertTo-Json -Compress } catch { Write-Error $_.Exception.Message; exit 1 }`;
+            const fallbackCandidates = sigma.platform.isWindows
+              ? getWindowsPowerShellCandidates(powerShellJsonToolsScript)
+              : [];
+            const denoCommandCandidates = await getDenoCommandCandidates(['run', '--quiet', jsonToolsScriptPath, action, jsonInput]);
+            const { result, commandName } = await runFirstAvailableCommand([
+              ...denoCommandCandidates,
+              ...fallbackCandidates,
+            ]);
+
+            if (result.code !== 0) {
+              modal.updateElement('resultOutput', {
+                value: result.stderr || `${commandName} exited with a non-zero code`,
+              });
+              return false;
+            }
+
+            const parsedResult = JSON.parse(result.stdout.trim());
+            modal.updateElement('resultOutput', {
+              value: parsedResult.output,
+            });
+          } catch (error) {
+            modal.updateElement('resultOutput', {
+              value: getErrorMessage(error) || 'No supported runtime found. Install Deno or use Windows PowerShell.',
+            });
+          }
+
+          return false;
         });
-      } catch (error) {
-        sigma.ui.showNotification({
-          title: 'Deno Eval Error',
-          message: error.message || 'Failed to run Deno',
-          type: 'error'
-        });
-      }
+
+        modal.onClose(() => resolve());
+      });
     }
   );
 
   sigma.commands.registerCommand(
-    { id: 'deno-system-info', title: 'Show Deno System Info', description: 'Displays system information reported by Deno' },
+    { id: 'runtime-diagnostics', title: 'Show runtime diagnostics', description: 'Displays runtime system info and includes PowerShell process diagnostics on Windows' },
     async () => {
       try {
-        const denoScript = `
-          const info = {
-            os: Deno.build.os,
-            arch: Deno.build.arch,
-            denoVersion: Deno.version.deno,
-            v8Version: Deno.version.v8,
-            typescriptVersion: Deno.version.typescript,
-            hostname: Deno.hostname(),
-            homeDir: Deno.env.get("HOME") || Deno.env.get("USERPROFILE"),
-          };
-          console.log(JSON.stringify(info));
-        `;
+        const powerShellSystemInfoScript = `$computerInfo = Get-ComputerInfo; $osName = if ($computerInfo.OsName) { $computerInfo.OsName } else { 'Windows' }; $osVersion = if ($computerInfo.OsVersion) { $computerInfo.OsVersion } else { '' }; $hostName = $env:COMPUTERNAME; $homePath = $env:USERPROFILE; [PSCustomObject]@{ os = 'windows'; arch = $env:PROCESSOR_ARCHITECTURE; denoVersion = ''; v8Version = ''; typescriptVersion = ''; hostname = $hostName; homeDir = $homePath; osName = $osName; osVersion = $osVersion } | ConvertTo-Json -Compress`;
+        const fallbackCandidates = sigma.platform.isWindows
+          ? getWindowsPowerShellCandidates(powerShellSystemInfoScript)
+          : [];
+        const systemInfoExecution = await sigma.ui.withProgress(
+          {
+            subtitle: 'Collecting system info',
+            location: 'notification',
+            cancellable: true,
+          },
+          async (progress, cancellationToken) => {
+            progress.report({
+              description: 'Preparing runtime...',
+              increment: 6,
+            });
 
-        const result = await sigma.shell.run('deno', ['eval', '--unstable', denoScript]);
+            try {
+              const denoCommandCandidates = await getDenoCommandCandidates([
+                'run',
+                '--quiet',
+                '--allow-env',
+                '--allow-sys',
+                runtimeInfoScriptPath,
+              ]);
+              const executionResult = await runFirstAvailableCommandWithProgress(
+                [
+                  ...denoCommandCandidates,
+                  ...fallbackCandidates,
+                ],
+                progress,
+                cancellationToken,
+              );
+              return executionResult;
+            } catch (error) {
+              if (cancellationToken.isCancellationRequested) {
+                return { cancelled: true };
+              }
+              throw error;
+            }
+          },
+        );
+
+        if (systemInfoExecution.cancelled) {
+          sigma.ui.showNotification({
+            title: 'System info cancelled',
+            subtitle: 'Stopped collecting system info',
+            type: 'warning'
+          });
+          return;
+        }
+
+        const { result, commandName } = systemInfoExecution;
 
         if (result.code !== 0) {
           sigma.ui.showNotification({
-            title: 'Deno System Info',
-            message: result.stderr || 'Failed to get system info',
+            title: 'System info',
+            subtitle: result.stderr || `${commandName} failed to get system info`,
             type: 'error'
           });
           return;
         }
 
         const info = JSON.parse(result.stdout.trim());
-        const infoText = [
-          `OS: ${info.os}`,
-          `Architecture: ${info.arch}`,
-          `Deno: v${info.denoVersion}`,
-          `V8: v${info.v8Version}`,
-          `TypeScript: v${info.typescriptVersion}`,
-          `Hostname: ${info.hostname}`,
-          `Home: ${info.homeDir}`,
-        ].join('\n');
+        const runtimeLabel = commandName === 'deno' ? 'Deno' : 'PowerShell';
+        let processDiagnostics = null;
+        let processDiagnosticsErrorMessage = null;
 
-        await sigma.ui.showDialog({
-          title: 'Deno System Info',
-          message: infoText,
-          type: 'info',
-          confirmText: 'OK'
+        if (sigma.platform.isWindows) {
+          try {
+            processDiagnostics = await runPowerShellScript(
+              '$topProcesses = Get-Process | Sort-Object CPU -Descending | Select-Object -First 5 ProcessName, Id, CPU; [PSCustomObject]@{ processCount = (Get-Process).Count; topProcesses = $topProcesses } | ConvertTo-Json -Compress',
+              {
+                timeout: 15000,
+                parseOutput: ({ stdout }) => JSON.parse(stdout),
+              },
+            );
+          } catch (error) {
+            processDiagnosticsErrorMessage = getErrorMessage(error) || 'PowerShell process diagnostics are unavailable.';
+          }
+        }
+
+        const infoContent = [
+          sigma.ui.input({ id: 'runtime', label: 'Runtime', value: runtimeLabel, disabled: true }),
+          sigma.ui.input({ id: 'os', label: 'OS', value: info.os, disabled: true }),
+          sigma.ui.input({ id: 'arch', label: 'Architecture', value: info.arch, disabled: true }),
+          sigma.ui.separator(),
+          sigma.ui.input({ id: 'deno', label: 'Deno', value: info.denoVersion ? `v${info.denoVersion}` : 'N/A', disabled: true }),
+          sigma.ui.input({ id: 'v8', label: 'V8', value: info.v8Version ? `v${info.v8Version}` : 'N/A', disabled: true }),
+          sigma.ui.input({ id: 'typescript', label: 'TypeScript', value: info.typescriptVersion ? `v${info.typescriptVersion}` : 'N/A', disabled: true }),
+          sigma.ui.separator(),
+          sigma.ui.input({ id: 'hostname', label: 'Hostname', value: info.hostname, disabled: true }),
+          sigma.ui.input({ id: 'home', label: 'Home', value: info.homeDir, disabled: true }),
+        ];
+
+        if (info.osName) {
+          infoContent.push(sigma.ui.input({ id: 'osName', label: 'OS Name', value: info.osName, disabled: true }));
+        }
+        if (info.osVersion) {
+          infoContent.push(sigma.ui.input({ id: 'osVersion', label: 'OS Version', value: info.osVersion, disabled: true }));
+        }
+        if (sigma.platform.isWindows) {
+          infoContent.push(sigma.ui.separator());
+          infoContent.push(sigma.ui.text('PowerShell Process Diagnostics'));
+          if (processDiagnostics) {
+            const topProcesses = Array.isArray(processDiagnostics.topProcesses)
+              ? processDiagnostics.topProcesses
+              : processDiagnostics.topProcesses
+                ? [processDiagnostics.topProcesses]
+                : [];
+            const topProcessesText = topProcesses
+              .map(processItem => `${processItem.ProcessName} (PID ${processItem.Id}) CPU ${Number(processItem.CPU || 0).toFixed(2)}`)
+              .join('\n');
+
+            infoContent.push(
+              sigma.ui.input({
+                id: 'processCount',
+                label: 'Running Processes',
+                value: String(processDiagnostics.processCount || 0),
+                disabled: true,
+              })
+            );
+            infoContent.push(
+              sigma.ui.textarea({
+                id: 'topProcesses',
+                label: 'Top CPU Processes',
+                value: topProcessesText || 'No process data returned.',
+                rows: 8,
+                disabled: true,
+              })
+            );
+          } else {
+            infoContent.push(
+              sigma.ui.text(processDiagnosticsErrorMessage || 'PowerShell process diagnostics are unavailable.')
+            );
+          }
+        }
+
+        sigma.ui.createModal({
+          title: 'System info',
+          width: 720,
+          content: infoContent,
         });
       } catch (error) {
         sigma.ui.showNotification({
-          title: 'Deno System Info',
-          message: error.message || 'Deno is not installed or not in PATH',
+          title: 'System info',
+          subtitle: getErrorMessage(error) || 'Failed to get system info',
           type: 'error'
         });
       }

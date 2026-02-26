@@ -3,7 +3,7 @@
   "id": "sigma.hello-world",
   "name": "Example",
   "previousName": "Hello World",
-  "version": "1.12.0",
+  "version": "1.14.0",
   "publisher": {
     "name": "sigma-hub",
     "url": "https://github.com/sigma-hub"
@@ -30,11 +30,6 @@
     "configuration": {
       "title": "Example Extension Settings",
       "properties": {
-        "greeting": {
-          "type": "string",
-          "default": "Hello",
-          "description": "The greeting message to display"
-        },
         "showNotifications": {
           "type": "boolean",
           "default": true,
@@ -46,53 +41,10 @@
           "minimum": 1000,
           "maximum": 10000,
           "description": "Duration of notifications in milliseconds"
-        },
-        "greetingStyle": {
-          "type": "string",
-          "default": "friendly",
-          "enum": [
-            "friendly",
-            "formal",
-            "casual"
-          ],
-          "enumDescriptions": [
-            "Warm and welcoming",
-            "Professional tone",
-            "Relaxed and informal"
-          ],
-          "description": "The style of greeting messages"
         }
       }
     },
     "commands": [
-      {
-        "id": "greet",
-        "title": "Greet User",
-        "description": "Shows a greeting notification with your name",
-        "arguments": [
-          {
-            "name": "name",
-            "type": "text",
-            "placeholder": "Enter your name",
-            "required": true
-          },
-          {
-            "name": "style",
-            "type": "dropdown",
-            "placeholder": "Greeting style",
-            "data": [
-              { "title": "Friendly", "value": "friendly" },
-              { "title": "Formal", "value": "formal" },
-              { "title": "Casual", "value": "casual" }
-            ]
-          }
-        ]
-      },
-      {
-        "id": "show-info",
-        "title": "Show Extension Info",
-        "description": "Shows extension and app version information"
-      },
       {
         "id": "show-context",
         "title": "Show Current Context",
@@ -102,11 +54,6 @@
         "id": "open-file-dialog",
         "title": "Open File Dialog",
         "description": "Opens a native file picker dialog"
-      },
-      {
-        "id": "list-builtin-commands",
-        "title": "List Built-in Commands",
-        "description": "Shows available built-in commands"
       },
       {
         "id": "show-settings",
@@ -119,29 +66,21 @@
         "description": "Demonstrates the progress notification API with cancellation support"
       },
       {
-        "id": "deno-eval",
-        "title": "Run Deno Eval",
-        "description": "Evaluates a JavaScript expression using Deno and shows the result",
-        "arguments": [
-          {
-            "name": "expression",
-            "type": "text",
-            "placeholder": "Enter a JavaScript expression (e.g. 2 + 2)",
-            "required": true
-          }
-        ]
+        "id": "deno-json-tools",
+        "title": "Run Deno JSON Tools",
+        "description": "Validates, formats, or minifies JSON using Deno with Windows PowerShell fallback"
       },
       {
-        "id": "deno-system-info",
-        "title": "Show Deno System Info",
-        "description": "Displays system information reported by Deno"
+        "id": "runtime-diagnostics",
+        "title": "Show Runtime Diagnostics",
+        "description": "Displays runtime system info and includes PowerShell process diagnostics on Windows"
       }
     ],
     "contextMenu": [
       {
-        "id": "say-hello",
-        "title": "Say Hello",
-        "icon": "Hand",
+        "id": "example-notification",
+        "title": "Example Notification",
+        "icon": "Bell",
         "group": "extensions",
         "order": 1
       },
@@ -177,22 +116,11 @@
         }
       },
       {
-        "id": "quick-view-file",
-        "title": "Quick View",
-        "icon": "Eye",
-        "group": "extensions",
-        "order": 5,
-        "when": {
-          "selectionType": "single",
-          "entryType": "file"
-        }
-      },
-      {
         "id": "analyze-file-deno",
         "title": "Analyze File with Deno",
         "icon": "FileSearch",
         "group": "extensions",
-        "order": 6,
+        "order": 5,
         "when": {
           "selectionType": "single",
           "entryType": "file"
@@ -200,11 +128,6 @@
       }
     ],
     "keybindings": [
-      {
-        "command": "greet",
-        "key": "ctrl+shift+g",
-        "when": "always"
-      },
       {
         "command": "show-context",
         "key": "ctrl+shift+i",
