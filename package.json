@@ -17,7 +17,7 @@
   "tags": [
     "example"
   ],
-  "type": "api",
+  "extensionType": "api",
   "main": "index.js",
   "permissions": [
     "contextMenu",
@@ -147,5 +147,5 @@
   },
   "engines": {
     "sigmaFileManager": ">=2.0.0"
-  }
+  },
 }

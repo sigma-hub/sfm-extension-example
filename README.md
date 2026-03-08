@@ -2,6 +2,12 @@
 
 A practical demo extension for [Sigma File Manager](https://github.com/aleksey-hoffman/sigma-file-manager) that showcases a consistent extension API style.
 
+## Structure
+
+- `index.js`: extension entrypoint; activates extension and registers all handlers
+- `scripts/`: reusable scripts executed with `deno run` (json-tools.js, file-analysis.js, runtime-info.js)
+- `sigma-extension.d.ts`: Sigma API type definitions for editor autocomplete
+
 ## Features
 
 ### Context Menu Examples
@@ -21,16 +27,6 @@ A practical demo extension for [Sigma File Manager](https://github.com/aleksey-h
 - `Run Deno JSON Tools` - validate/pretty/minify JSON via bundled script (with Windows PowerShell fallback)
 - `Show Runtime Diagnostics` - runtime info plus PowerShell process diagnostics on Windows
 
-## Script-Based Demos
-
-The extension ships reusable scripts in `scripts/` and executes them with `deno run`:
-
-- `scripts/json-tools.js`
-- `scripts/file-analysis.js`
-- `scripts/runtime-info.js`
-
-This avoids dynamic `eval` and keeps command execution patterns consistent.
-
 ## API Surface Demonstrated
 
 - `sigma.contextMenu.registerItem()`
@@ -47,6 +43,5 @@ This avoids dynamic `eval` and keeps command execution patterns consistent.
 
 ## Requirements
 
-- Sigma File Manager `>=2.0.0`
 - Deno installed and available in `PATH` for Deno-based examples
 - Windows for PowerShell-specific examples
