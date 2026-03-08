@@ -1,9 +1,9 @@
 {
-  "$schema": "https://raw.githubusercontent.com/aleksey-hoffman/sigma-file-manager/v2/src/modules/extensions/sdk/manifest.schema.json",
+  "$schema": "https://raw.githubusercontent.com/aleksey-hoffman/sigma-file-manager/main/packages/api/manifest.schema.json",
   "id": "sigma.hello-world",
   "name": "Example",
   "previousName": "Hello World",
-  "version": "1.14.0",
+  "version": "1.14.1",
   "publisher": {
     "name": "sigma-hub",
     "url": "https://github.com/sigma-hub"
@@ -148,4 +148,7 @@
   "engines": {
     "sigmaFileManager": ">=2.0.0"
   },
+  "devDependencies": {
+    "@sigma-file-manager/api": "^1.2.0"
+  }
 }

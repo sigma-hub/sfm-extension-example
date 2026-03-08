@@ -1,7 +1,7 @@
 // @ts-check
 
 /**
- * @typedef {import('./sigma-extension').ExtensionActivationContext} ExtensionActivationContext
+ * @typedef {import('@sigma-file-manager/api').ExtensionActivationContext} ExtensionActivationContext
  */
 
 function sleep(ms) {

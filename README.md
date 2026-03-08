@@ -6,7 +6,7 @@ A practical demo extension for [Sigma File Manager](https://github.com/aleksey-h
 
 - `index.js`: extension entrypoint; activates extension and registers all handlers
 - `scripts/`: reusable scripts executed with `deno run` (json-tools.js, file-analysis.js, runtime-info.js)
-- `sigma-extension.d.ts`: Sigma API type definitions for editor autocomplete
+- `package.json`: extension manifest plus the `@sigma-file-manager/api` dev dependency for editor types
 
 ## Features
 
