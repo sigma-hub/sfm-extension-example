@@ -4,6 +4,10 @@
  * @typedef {import('@sigma-file-manager/api').ExtensionActivationContext} ExtensionActivationContext
  */
 
+function getT() {
+  return (key, params) => sigma?.i18n?.extensionT?.(key, params) ?? key;
+}
+
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -31,13 +35,14 @@ function formatFileSize(sizeBytes) {
 }
 
 function showFileAnalysisModal(fileName, hashValue) {
+  const t = getT();
   sigma.ui.createModal({
-    title: `File analysis: ${fileName}`,
+    title: t('fileAnalysisTitle', { fileName }),
     width: 760,
     content: [
       sigma.ui.input({
         id: 'fileHash',
-        label: 'SHA-256 Hash',
+        label: t('sha256Hash'),
         value: hashValue,
         disabled: true,
       }),
@@ -194,8 +199,9 @@ async function runFirstAvailableCommandWithProgress(commandCandidates, progress,
     }
 
     try {
+      const t = getT();
       progress.report({
-        description: `Running ${commandCandidate.command}...`,
+        description: t('runningCommand', { command: commandCandidate.command }),
         increment: progressValue,
       });
       progressValue = 0;
@@ -206,7 +212,7 @@ async function runFirstAvailableCommandWithProgress(commandCandidates, progress,
         () => {
           if (!cancellationToken.isCancellationRequested) {
             progress.report({
-              description: `Analyzing with ${commandCandidate.command}...`,
+              description: t('analyzingWith', { command: commandCandidate.command }),
               increment: 0.4,
             });
           }
@@ -246,12 +252,13 @@ async function runFirstAvailableCommandWithProgress(commandCandidates, progress,
 }
 
 function registerContextMenuHandlers(context) {
+  const t = getT();
   const fileAnalysisScriptPath = sigma.platform.joinPath(context.extensionPath, 'scripts', 'file-analysis.js');
 
   sigma.contextMenu.registerItem(
     {
       id: 'example-notification',
-      title: 'Example notification',
+      title: t('exampleNotification'),
       icon: 'Bell',
       group: 'extensions',
       order: 1
@@ -267,8 +274,8 @@ function registerContextMenuHandlers(context) {
       const entry = menuContext.selectedEntries[0];
 
       sigma.ui.showNotification({
-        title: 'Extension notification',
-        subtitle: 'Action triggered from context menu',
+        title: t('extensionNotification'),
+        subtitle: t('actionFromContextMenu'),
         description: entry ? entry.name : '',
         type: 'info',
         duration: duration || 3000
@@ -279,7 +286,7 @@ function registerContextMenuHandlers(context) {
   sigma.contextMenu.registerItem(
     {
       id: 'count-selected',
-      title: 'Count selected items',
+      title: t('countSelectedItems'),
       icon: 'Hash',
       group: 'extensions',
       order: 2,
@@ -293,8 +300,8 @@ function registerContextMenuHandlers(context) {
       const folders = menuContext.selectedEntries.filter(entry => entry.isDirectory).length;
 
       sigma.ui.showNotification({
-        title: 'Selection count',
-        subtitle: `Selected ${count} items: ${files} files, ${folders} folders`,
+        title: t('selectionCount'),
+        subtitle: t('selectedItemsSummary', { count, files, folders }),
         type: 'success',
         duration: 4000
       });
@@ -304,7 +311,7 @@ function registerContextMenuHandlers(context) {
   sigma.contextMenu.registerItem(
     {
       id: 'file-info',
-      title: 'Show file details',
+      title: t('showFileDetails'),
       icon: 'Info',
       group: 'extensions',
       order: 3,
@@ -318,13 +325,13 @@ function registerContextMenuHandlers(context) {
       if (!file) return;
 
       sigma.ui.createModal({
-        title: `File details: ${file.name}`,
+        title: t('fileDetailsTitle', { fileName: file.name }),
         width: 640,
         content: [
-          sigma.ui.input({ id: 'name', label: 'Name', value: file.name, disabled: true }),
-          sigma.ui.input({ id: 'path', label: 'Path', value: file.path, disabled: true }),
-          sigma.ui.input({ id: 'extension', label: 'Extension', value: file.extension || 'None', disabled: true }),
-          sigma.ui.input({ id: 'size', label: 'Size', value: formatFileSize(file.size), disabled: true }),
+          sigma.ui.input({ id: 'name', label: t('name'), value: file.name, disabled: true }),
+          sigma.ui.input({ id: 'path', label: t('path'), value: file.path, disabled: true }),
+          sigma.ui.input({ id: 'extension', label: t('extension'), value: file.extension || t('none'), disabled: true }),
+          sigma.ui.input({ id: 'size', label: t('size'), value: formatFileSize(file.size), disabled: true }),
         ],
       });
     }
@@ -333,7 +340,7 @@ function registerContextMenuHandlers(context) {
   sigma.contextMenu.registerItem(
     {
       id: 'copy-path',
-      title: 'Copy path',
+      title: t('copyPath'),
       icon: 'Copy',
       group: 'extensions',
       order: 4,
@@ -348,8 +355,8 @@ function registerContextMenuHandlers(context) {
         await navigator.clipboard.writeText(entry.path);
 
         sigma.ui.showNotification({
-          title: 'Path copied',
-          subtitle: 'Copied to clipboard',
+          title: t('pathCopied'),
+          subtitle: t('copiedToClipboard'),
           description: entry.path,
           type: 'success',
           duration: 2000
@@ -361,7 +368,7 @@ function registerContextMenuHandlers(context) {
   sigma.contextMenu.registerItem(
     {
       id: 'analyze-file-deno',
-      title: 'Analyze file with Deno',
+      title: t('analyzeFileDeno'),
       icon: 'FileSearch',
       group: 'extensions',
       order: 5,
@@ -385,13 +392,13 @@ function registerContextMenuHandlers(context) {
           : [];
         const analysisExecution = await sigma.ui.withProgress(
           {
-            subtitle: `Analyzing ${file.name}`,
+            subtitle: t('analyzingFile', { fileName: file.name }),
             location: 'notification',
             cancellable: true,
           },
           async (progress, cancellationToken) => {
             progress.report({
-              description: 'Preparing analysis...',
+              description: t('preparingAnalysis'),
               increment: 6,
             });
 
@@ -416,8 +423,8 @@ function registerContextMenuHandlers(context) {
 
         if (analysisExecution.cancelled) {
           sigma.ui.showNotification({
-            title: 'Analysis cancelled',
-            subtitle: `Stopped analyzing ${file.name}`,
+            title: t('analysisCancelled'),
+            subtitle: t('stoppedAnalyzing', { fileName: file.name }),
             type: 'warning'
           });
           return;
@@ -427,7 +434,7 @@ function registerContextMenuHandlers(context) {
 
         if (result.code !== 0) {
           sigma.ui.showNotification({
-            title: 'Analysis failed',
+            title: t('analysisFailed'),
             subtitle: result.stderr || `${commandName} exited with an error`,
             type: 'error'
           });
@@ -438,8 +445,8 @@ function registerContextMenuHandlers(context) {
         showFileAnalysisModal(file.name, analysis.hash);
       } catch (error) {
         sigma.ui.showNotification({
-          title: 'Analysis error',
-          subtitle: getErrorMessage(error) || 'Failed to analyze file',
+          title: t('analysisError'),
+          subtitle: getErrorMessage(error) || t('failedAnalyzeFile'),
           type: 'error'
         });
       }
@@ -448,11 +455,12 @@ function registerContextMenuHandlers(context) {
 }
 
 function registerCommands(context) {
+  const t = getT();
   const jsonToolsScriptPath = sigma.platform.joinPath(context.extensionPath, 'scripts', 'json-tools.js');
   const runtimeInfoScriptPath = sigma.platform.joinPath(context.extensionPath, 'scripts', 'runtime-info.js');
 
   sigma.commands.registerCommand(
-    { id: 'show-settings', title: 'Show current settings', description: 'Displays the current extension settings' },
+    { id: 'show-settings', title: t('showSettings'), description: t('showSettingsDesc') },
     async () => {
       const allSettings = await sigma.settings.getAll();
       const settingsContent = [];
@@ -469,10 +477,10 @@ function registerCommands(context) {
       }
 
       sigma.ui.createModal({
-        title: 'Extension settings',
+        title: t('extensionSettings'),
         width: 640,
         content: [
-          sigma.ui.text('Current configuration for this extension. You can change these in Settings > Extensions.'),
+          sigma.ui.text(t('currentConfigNote')),
           sigma.ui.separator(),
           ...settingsContent,
         ],
@@ -481,15 +489,15 @@ function registerCommands(context) {
   );
 
   sigma.commands.registerCommand(
-    { id: 'show-context', title: 'Show current context', description: 'Shows current path and selection info' },
+    { id: 'show-context', title: t('showContext'), description: t('showContextDesc') },
     () => {
       const currentPath = sigma.context.getCurrentPath();
       const selectedEntries = sigma.context.getSelectedEntries();
 
       const content = [
-        sigma.ui.input({ id: 'currentPath', label: 'Current Path', value: currentPath || 'N/A', disabled: true }),
+        sigma.ui.input({ id: 'currentPath', label: t('currentPath'), value: currentPath || t('notAvailable'), disabled: true }),
         sigma.ui.separator(),
-        sigma.ui.input({ id: 'selectedCount', label: 'Selected Items', value: String(selectedEntries.length), disabled: true }),
+        sigma.ui.input({ id: 'selectedCount', label: t('selectedItems'), value: String(selectedEntries.length), disabled: true }),
       ];
 
       if (selectedEntries.length > 0) {
@@ -497,7 +505,7 @@ function registerCommands(context) {
         const maxDisplay = Math.min(selectedEntries.length, 2);
         for (let entryIndex = 0; entryIndex < maxDisplay; entryIndex++) {
           const entry = selectedEntries[entryIndex];
-          const entryTypeLabel = entry.isDirectory ? 'Directory' : 'File';
+          const entryTypeLabel = entry.isDirectory ? t('directory') : t('file');
           content.push(
             sigma.ui.input({
               id: `entry-${entryIndex}`,
@@ -509,13 +517,13 @@ function registerCommands(context) {
         }
         if (selectedEntries.length > maxDisplay) {
           const hiddenEntriesCount = selectedEntries.length - maxDisplay;
-          const hiddenEntriesLabel = hiddenEntriesCount === 1 ? 'entry' : 'entries';
-          content.push(sigma.ui.text(`${hiddenEntriesCount} more selected ${hiddenEntriesLabel} not shown`));
+          const hiddenEntriesLabel = hiddenEntriesCount === 1 ? t('oneEntry') : t('nEntries');
+          content.push(sigma.ui.text(t('moreEntriesNotShown', { count: hiddenEntriesCount, entries: hiddenEntriesLabel })));
         }
       }
 
       sigma.ui.createModal({
-        title: 'Current context',
+        title: t('currentContext'),
         width: 720,
         content,
       });
@@ -523,10 +531,10 @@ function registerCommands(context) {
   );
 
   sigma.commands.registerCommand(
-    { id: 'open-file-dialog', title: 'Open file dialog', description: 'Opens a native file picker' },
+    { id: 'open-file-dialog', title: t('openFileDialog'), description: t('openFileDialogDesc') },
     async () => {
       const result = await sigma.dialog.openFile({
-        title: 'Select a file',
+        title: t('selectFile'),
         filters: [
           { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif'] },
           { name: 'All Files', extensions: ['*'] }
@@ -535,8 +543,8 @@ function registerCommands(context) {
 
       if (result) {
         sigma.ui.showNotification({
-          title: 'File selected',
-          subtitle: 'You selected',
+          title: t('fileSelected'),
+          subtitle: t('youSelected'),
           description: Array.isArray(result) ? result.join(', ') : result,
           type: 'success'
         });
@@ -545,14 +553,14 @@ function registerCommands(context) {
   );
 
   sigma.commands.registerCommand(
-    { id: 'demo-progress', title: 'Demo progress API', description: 'Demonstrates the progress notification API' },
+    { id: 'demo-progress', title: t('demoProgress'), description: t('demoProgressDesc') },
     async () => {
       const totalItems = 10;
       let processedItems = 0;
 
       const result = await sigma.ui.withProgress(
         {
-          subtitle: 'Processing',
+          subtitle: t('processing'),
           location: 'notification',
           cancellable: true
         },
@@ -567,7 +575,7 @@ function registerCommands(context) {
             }
 
             progress.report({
-              description: `Item ${itemIndex + 1} of ${totalItems}`,
+              description: t('itemNOfTotal', { n: itemIndex + 1, total: totalItems }),
               increment: 100 / totalItems
             });
 
@@ -576,8 +584,8 @@ function registerCommands(context) {
           }
 
           progress.report({
-            subtitle: 'Processed',
-            description: `${processedItems} items`,
+            subtitle: t('processed'),
+            description: t('nItems', { n: processedItems }),
             increment: 100,
           });
 
@@ -587,8 +595,8 @@ function registerCommands(context) {
 
       if (!result.completed) {
         sigma.ui.showNotification({
-          title: 'Processing cancelled',
-          subtitle: `Processed ${result.processed} of ${totalItems} items before cancellation.`,
+          title: t('processingCancelled'),
+          subtitle: t('processedBeforeCancel', { processed: result.processed, total: totalItems }),
           type: 'warning'
         });
       }
@@ -598,41 +606,41 @@ function registerCommands(context) {
   sigma.commands.registerCommand(
     {
       id: 'deno-json-tools',
-      title: 'Run Deno JSON tools',
-      description: 'Validates, formats, or minifies JSON using a bundled Deno script',
+      title: t('denoJsonTools'),
+      description: t('denoJsonToolsDesc'),
     },
     async () => {
       return new Promise((resolve) => {
         const modal = sigma.ui.createModal({
-          title: 'Deno JSON tools',
+          title: t('denoJsonTools'),
           width: 720,
           content: [
             sigma.ui.select({
               id: 'action',
-              label: 'Action',
+              label: t('action'),
               options: [
-                { value: 'validate', label: 'Validate JSON' },
-                { value: 'pretty', label: 'Pretty Print' },
-                { value: 'minify', label: 'Minify' },
+                { value: 'validate', label: t('validateJson') },
+                { value: 'pretty', label: t('prettyPrint') },
+                { value: 'minify', label: t('minify') },
               ],
               value: 'validate',
             }),
             sigma.ui.textarea({
               id: 'jsonInput',
-              label: 'JSON',
+              label: t('json'),
               placeholder: '{\n  "name": "Sigma"\n}',
               rows: 10,
             }),
             sigma.ui.textarea({
               id: 'resultOutput',
-              label: 'Result',
+              label: t('result'),
               value: '',
               rows: 8,
               disabled: true,
             }),
           ],
           buttons: [
-            { id: 'run', label: 'Run', variant: 'primary', shortcut: { key: 'Enter', modifiers: ['ctrl'] } },
+            { id: 'run', label: t('run'), variant: 'primary', shortcut: { key: 'Enter', modifiers: ['ctrl'] } },
           ],
         });
 
@@ -644,7 +652,7 @@ function registerCommands(context) {
 
           if (!jsonInput) {
             modal.updateElement('resultOutput', {
-              value: 'JSON input is required.',
+              value: t('jsonInputRequired'),
             });
             return false;
           }
@@ -675,7 +683,7 @@ function registerCommands(context) {
             });
           } catch (error) {
             modal.updateElement('resultOutput', {
-              value: getErrorMessage(error) || 'No supported runtime found. Install Deno or use Windows PowerShell.',
+              value: getErrorMessage(error) || t('noRuntimeFound'),
             });
           }
 
@@ -688,7 +696,7 @@ function registerCommands(context) {
   );
 
   sigma.commands.registerCommand(
-    { id: 'runtime-diagnostics', title: 'Show runtime diagnostics', description: 'Displays runtime system info and includes PowerShell process diagnostics on Windows' },
+    { id: 'runtime-diagnostics', title: t('runtimeDiagnostics'), description: t('runtimeDiagnosticsDesc') },
     async () => {
       try {
         const powerShellSystemInfoScript = `$computerInfo = Get-ComputerInfo; $osName = if ($computerInfo.OsName) { $computerInfo.OsName } else { 'Windows' }; $osVersion = if ($computerInfo.OsVersion) { $computerInfo.OsVersion } else { '' }; $hostName = $env:COMPUTERNAME; $homePath = $env:USERPROFILE; [PSCustomObject]@{ os = 'windows'; arch = $env:PROCESSOR_ARCHITECTURE; denoVersion = ''; v8Version = ''; typescriptVersion = ''; hostname = $hostName; homeDir = $homePath; osName = $osName; osVersion = $osVersion } | ConvertTo-Json -Compress`;
@@ -697,13 +705,13 @@ function registerCommands(context) {
           : [];
         const systemInfoExecution = await sigma.ui.withProgress(
           {
-            subtitle: 'Collecting system info',
+            subtitle: t('collectingSystemInfo'),
             location: 'notification',
             cancellable: true,
           },
           async (progress, cancellationToken) => {
             progress.report({
-              description: 'Preparing runtime...',
+              description: t('preparingRuntime'),
               increment: 6,
             });
 
@@ -735,8 +743,8 @@ function registerCommands(context) {
 
         if (systemInfoExecution.cancelled) {
           sigma.ui.showNotification({
-            title: 'System info cancelled',
-            subtitle: 'Stopped collecting system info',
+            title: t('systemInfoCancelled'),
+            subtitle: t('stoppedCollecting'),
             type: 'warning'
           });
           return;
@@ -746,7 +754,7 @@ function registerCommands(context) {
 
         if (result.code !== 0) {
           sigma.ui.showNotification({
-            title: 'System info',
+            title: t('systemInfo'),
             subtitle: result.stderr || `${commandName} failed to get system info`,
             type: 'error'
           });
@@ -773,27 +781,27 @@ function registerCommands(context) {
         }
 
         const infoContent = [
-          sigma.ui.input({ id: 'runtime', label: 'Runtime', value: runtimeLabel, disabled: true }),
-          sigma.ui.input({ id: 'os', label: 'OS', value: info.os, disabled: true }),
-          sigma.ui.input({ id: 'arch', label: 'Architecture', value: info.arch, disabled: true }),
+          sigma.ui.input({ id: 'runtime', label: t('runtime'), value: runtimeLabel, disabled: true }),
+          sigma.ui.input({ id: 'os', label: t('os'), value: info.os, disabled: true }),
+          sigma.ui.input({ id: 'arch', label: t('arch'), value: info.arch, disabled: true }),
           sigma.ui.separator(),
-          sigma.ui.input({ id: 'deno', label: 'Deno', value: info.denoVersion ? `v${info.denoVersion}` : 'N/A', disabled: true }),
-          sigma.ui.input({ id: 'v8', label: 'V8', value: info.v8Version ? `v${info.v8Version}` : 'N/A', disabled: true }),
-          sigma.ui.input({ id: 'typescript', label: 'TypeScript', value: info.typescriptVersion ? `v${info.typescriptVersion}` : 'N/A', disabled: true }),
+          sigma.ui.input({ id: 'deno', label: 'Deno', value: info.denoVersion ? `v${info.denoVersion}` : t('notAvailable'), disabled: true }),
+          sigma.ui.input({ id: 'v8', label: 'V8', value: info.v8Version ? `v${info.v8Version}` : t('notAvailable'), disabled: true }),
+          sigma.ui.input({ id: 'typescript', label: 'TypeScript', value: info.typescriptVersion ? `v${info.typescriptVersion}` : t('notAvailable'), disabled: true }),
           sigma.ui.separator(),
-          sigma.ui.input({ id: 'hostname', label: 'Hostname', value: info.hostname, disabled: true }),
-          sigma.ui.input({ id: 'home', label: 'Home', value: info.homeDir, disabled: true }),
+          sigma.ui.input({ id: 'hostname', label: t('hostname'), value: info.hostname, disabled: true }),
+          sigma.ui.input({ id: 'home', label: t('home'), value: info.homeDir, disabled: true }),
         ];
 
         if (info.osName) {
-          infoContent.push(sigma.ui.input({ id: 'osName', label: 'OS Name', value: info.osName, disabled: true }));
+          infoContent.push(sigma.ui.input({ id: 'osName', label: t('osName'), value: info.osName, disabled: true }));
         }
         if (info.osVersion) {
-          infoContent.push(sigma.ui.input({ id: 'osVersion', label: 'OS Version', value: info.osVersion, disabled: true }));
+          infoContent.push(sigma.ui.input({ id: 'osVersion', label: t('osVersion'), value: info.osVersion, disabled: true }));
         }
         if (sigma.platform.isWindows) {
           infoContent.push(sigma.ui.separator());
-          infoContent.push(sigma.ui.text('PowerShell Process Diagnostics'));
+          infoContent.push(sigma.ui.text(t('powerShellDiagnostics')));
           if (processDiagnostics) {
             const topProcesses = Array.isArray(processDiagnostics.topProcesses)
               ? processDiagnostics.topProcesses
@@ -807,7 +815,7 @@ function registerCommands(context) {
             infoContent.push(
               sigma.ui.input({
                 id: 'processCount',
-                label: 'Running Processes',
+                label: t('runningProcesses'),
                 value: String(processDiagnostics.processCount || 0),
                 disabled: true,
               })
@@ -815,28 +823,28 @@ function registerCommands(context) {
             infoContent.push(
               sigma.ui.textarea({
                 id: 'topProcesses',
-                label: 'Top CPU Processes',
-                value: topProcessesText || 'No process data returned.',
+                label: t('topCpuProcesses'),
+                value: topProcessesText || t('noProcessData'),
                 rows: 8,
                 disabled: true,
               })
             );
           } else {
             infoContent.push(
-              sigma.ui.text(processDiagnosticsErrorMessage || 'PowerShell process diagnostics are unavailable.')
+              sigma.ui.text(processDiagnosticsErrorMessage || t('diagnosticsUnavailable'))
             );
           }
         }
 
         sigma.ui.createModal({
-          title: 'System info',
+          title: t('systemInfo'),
           width: 720,
           content: infoContent,
         });
       } catch (error) {
         sigma.ui.showNotification({
-          title: 'System info',
-          subtitle: getErrorMessage(error) || 'Failed to get system info',
+          title: t('systemInfo'),
+          subtitle: getErrorMessage(error) || t('failedSystemInfo'),
           type: 'error'
         });
       }
@@ -845,6 +853,8 @@ function registerCommands(context) {
 }
 
 async function activate(context) {
+  await sigma.i18n.mergeFromPath('locales');
+
   console.log('[Example] Extension activated!');
   console.log('[Example] Extension path:', context.extensionPath);
 
