@@ -3,7 +3,7 @@
   "id": "sigma.hello-world",
   "name": "Example",
   "previousName": "Hello World",
-  "version": "1.14.2",
+  "version": "1.14.4",
   "publisher": {
     "name": "sigma-hub",
     "url": "https://github.com/sigma-hub"
@@ -130,7 +130,7 @@
     "keybindings": [
       {
         "command": "show-context",
-        "key": "ctrl+shift+i",
+        "key": "ctrl+shift+s",
         "when": "navigatorFocused"
       },
       {

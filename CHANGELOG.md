@@ -8,13 +8,19 @@ All notable changes to this extension will be documented in this file.
 
 - Removed the "Open in System Explorer" context menu item.
 
+## [1.14.4] - 2026-03-10
+
+### Changed
+
+- Show Current Context shortcut: `Ctrl+Shift+I` → `Ctrl+Shift+S`
+
 ## [1.8.0] - 2026-01-30
 
 ### Added
 
 - **Keybinding Contributions** - Extension now demonstrates keyboard shortcuts:
   - `Ctrl+Shift+G` - Greet User command (works anywhere)
-  - `Ctrl+Shift+I` - Show Current Context (when navigator focused)
+  - `Ctrl+Shift+S` - Show Current Context (when navigator focused)
   - `Ctrl+Alt+C` - Copy Path (when single item selected)
   - `Ctrl+Shift+P` - Demo Progress API (works anywhere)
 
