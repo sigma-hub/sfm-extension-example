@@ -85,5 +85,11 @@
   "runningProcesses": "Tekuči procesi",
   "topCpuProcesses": "Procesi z največjo obremenitvijo CPU",
   "noProcessData": "Podatkov o procesih ni mogoče pridobiti.",
-  "diagnosticsUnavailable": "Diagnoza PowerShell ni na voljo."
+  "diagnosticsUnavailable": "Diagnoza PowerShell ni na voljo.",
+  "settings.title": "Nastavitve različice razširitve",
+  "settings.description": "Različica razširitve s kontekstnimi meniji, ukazi, obvestili, dialogi, kontekstnim API-jem, vgrajenimi ukazi, nastavitvami in prečnimi tipkami.",
+  "settings.showNotifications": "Pokaži obvestila",
+  "settings.showNotificationsDescription": "Pokaži obvestila za dejanja",
+  "settings.notificationDuration": "Trajanje obvestil",
+  "settings.notificationDurationDescription": "Trajanje obvestil v milisekundah"
 }

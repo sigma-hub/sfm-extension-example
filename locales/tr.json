@@ -85,5 +85,11 @@
   "runningProcesses": "Çalışan işlemler",
   "topCpuProcesses": "En çok CPU kullanan işlemler",
   "noProcessData": "İşlem verisi alınamadı.",
-  "diagnosticsUnavailable": "PowerShell tanılaması kullanılamıyor."
+  "diagnosticsUnavailable": "PowerShell tanılaması kullanılamıyor.",
+  "settings.title": "Örnek Uzantı Ayarları",
+  "settings.description": "Bağlam menüleri, komutlar, bildirimler, diyaloglar, bağlam API'si, yerleşik komutlar, yapılandırılabilir ayarlar, ilerleme raporlama ve kısayol tuşları gösteren örnek bir uzantı.",
+  "settings.showNotifications": "Bildirimleri göster",
+  "settings.showNotificationsDescription": "Eylemler için bildirimleri göster",
+  "settings.notificationDuration": "Bildirim süresi",
+  "settings.notificationDurationDescription": "Bildirim süresi milisaniye cinsinden"
 }

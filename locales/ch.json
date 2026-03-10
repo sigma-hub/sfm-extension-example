@@ -85,5 +85,11 @@
   "runningProcesses": "运行中的进程",
   "topCpuProcesses": "CPU 使用率最高的进程",
   "noProcessData": "未收到进程数据。",
-  "diagnosticsUnavailable": "PowerShell 诊断不可用。"
+  "diagnosticsUnavailable": "PowerShell 诊断不可用。",
+  "settings.title": "示例扩展设置",
+  "settings.description": "演示上下文菜单、命令、通知、对话框、上下文 API、内置命令、可配置设置、进度报告和键盘快捷键的示例扩展。",
+  "settings.showNotifications": "显示通知",
+  "settings.showNotificationsDescription": "在操作时显示通知",
+  "settings.notificationDuration": "通知时长",
+  "settings.notificationDurationDescription": "通知持续时间（毫秒）"
 }

@@ -85,5 +85,11 @@
   "runningProcesses": "Запущенные процессы",
   "topCpuProcesses": "Процессы с наибольшей загрузкой CPU",
   "noProcessData": "Данные о процессах не получены.",
-  "diagnosticsUnavailable": "Диагностика PowerShell недоступна."
+  "diagnosticsUnavailable": "Диагностика PowerShell недоступна.",
+  "settings.title": "Настройки примера расширения",
+  "settings.description": "Пример расширения с контекстным меню, командами, уведомлениями, диалогами, контекстным API, встроенными командами, настройками, отчётами о прогрессе и горячими клавишами.",
+  "settings.showNotifications": "Показывать уведомления",
+  "settings.showNotificationsDescription": "Показывать уведомления при действиях",
+  "settings.notificationDuration": "Длительность уведомлений",
+  "settings.notificationDurationDescription": "Длительность уведомлений в миллисекундах"
 }

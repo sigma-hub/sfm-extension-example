@@ -85,5 +85,11 @@
   "runningProcesses": "فرآیندهای در حال اجرا",
   "topCpuProcesses": "فرآیندهای با بیشترین مصرف CPU",
   "noProcessData": "دادهٔ فرآیند دریافت نشد.",
-  "diagnosticsUnavailable": "تشخیص PowerShell در دسترس نیست."
+  "diagnosticsUnavailable": "تشخیص PowerShell در دسترس نیست.",
+  "settings.title": "تنظیمات افزونهٔ نمونه",
+  "settings.description": "افزونه‌ای نمونه که منوهای زمینه، دستورات، اعلان‌ها، دیالوگ‌ها، API زمینه، دستورات داخلی، تنظیمات قابل پیکربندی، گزارش پیشرفت و میانبرهای صفحه‌کلید را نشان می‌دهد.",
+  "settings.showNotifications": "نمایش اعلان‌ها",
+  "settings.showNotificationsDescription": "نمایش اعلان برای اقدامات",
+  "settings.notificationDuration": "مدت زمان اعلان",
+  "settings.notificationDurationDescription": "مدت زمان اعلان به میلی‌ثانیه"
 }

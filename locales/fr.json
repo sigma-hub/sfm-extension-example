@@ -85,5 +85,11 @@
   "runningProcesses": "Processus en cours",
   "topCpuProcesses": "Processus à forte utilisation CPU",
   "noProcessData": "Aucune donnée de processus reçue.",
-  "diagnosticsUnavailable": "Diagnostics PowerShell non disponibles."
+  "diagnosticsUnavailable": "Diagnostics PowerShell non disponibles.",
+  "settings.title": "Paramètres de l'extension exemple",
+  "settings.description": "Extension exemple avec menus contextuels, commandes, notifications, dialogues, API de contexte, commandes intégrées, paramètres configurables, rapports de progression et raccourcis clavier.",
+  "settings.showNotifications": "Afficher les notifications",
+  "settings.showNotificationsDescription": "Afficher les notifications pour les actions",
+  "settings.notificationDuration": "Durée des notifications",
+  "settings.notificationDurationDescription": "Durée des notifications en millisecondes"
 }

@@ -85,5 +85,11 @@
   "runningProcesses": "Running Processes",
   "topCpuProcesses": "Top CPU Processes",
   "noProcessData": "No process data returned.",
-  "diagnosticsUnavailable": "PowerShell process diagnostics are unavailable."
+  "diagnosticsUnavailable": "PowerShell process diagnostics are unavailable.",
+  "settings.title": "Example Extension Settings",
+  "settings.description": "An example extension demonstrating context menus, commands, notifications, dialogs, context API, built-in commands, configurable settings, progress reporting, and keybindings.",
+  "settings.showNotifications": "Show Notifications",
+  "settings.showNotificationsDescription": "Show notifications for actions",
+  "settings.notificationDuration": "Notification Duration",
+  "settings.notificationDurationDescription": "Duration of notifications in milliseconds"
 }

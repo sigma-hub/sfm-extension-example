@@ -85,5 +85,11 @@
   "runningProcesses": "実行中のプロセス",
   "topCpuProcesses": "CPU使用率の高いプロセス",
   "noProcessData": "プロセスデータを取得できませんでした。",
-  "diagnosticsUnavailable": "PowerShell診断は利用できません。"
+  "diagnosticsUnavailable": "PowerShell診断は利用できません。",
+  "settings.title": "サンプル拡張機能の設定",
+  "settings.description": "コンテキストメニュー、コマンド、通知、ダイアログ、コンテキストAPI、組み込みコマンド、設定、進捗報告、キーバインドをデモンストレーションするサンプル拡張機能です。",
+  "settings.showNotifications": "通知を表示",
+  "settings.showNotificationsDescription": "アクションの通知を表示",
+  "settings.notificationDuration": "通知の表示時間",
+  "settings.notificationDurationDescription": "通知の表示時間（ミリ秒）"
 }

@@ -85,5 +85,11 @@
   "runningProcesses": "Laufende Prozesse",
   "topCpuProcesses": "Prozesse mit höchster CPU-Last",
   "noProcessData": "Keine Prozessdaten erhalten.",
+  "settings.title": "Beispieleinstellungen für Erweiterung",
+  "settings.description": "Eine Beispielerweiterung mit Kontextmenü, Befehlen, Benachrichtigungen, Dialogen, Kontext-API, integrierten Befehlen, konfigurierbaren Einstellungen, Fortschrittsanzeige und Tastenkürzeln.",
+  "settings.showNotifications": "Benachrichtigungen anzeigen",
+  "settings.showNotificationsDescription": "Benachrichtigungen für Aktionen anzeigen",
+  "settings.notificationDuration": "Benachrichtigungsdauer",
+  "settings.notificationDurationDescription": "Dauer der Benachrichtigungen in Millisekunden",
   "diagnosticsUnavailable": "PowerShell-Diagnose nicht verfügbar."
 }

@@ -85,5 +85,11 @@
   "runningProcesses": "Tiến trình đang chạy",
   "topCpuProcesses": "Tiến trình dùng CPU cao nhất",
   "noProcessData": "Không nhận được dữ liệu tiến trình.",
-  "diagnosticsUnavailable": "Chẩn đoán PowerShell không khả dụng."
+  "diagnosticsUnavailable": "Chẩn đoán PowerShell không khả dụng.",
+  "settings.title": "Cài đặt tiện ích mở rộng mẫu",
+  "settings.description": "Tiện ích mở rộng mẫu trình bày menu ngữ cảnh, lệnh, thông báo, hộp thoại, API ngữ cảnh, lệnh tích hợp, cài đặt có thể cấu hình, báo cáo tiến độ và phím tắt.",
+  "settings.showNotifications": "Hiển thị thông báo",
+  "settings.showNotificationsDescription": "Hiển thị thông báo cho các hành động",
+  "settings.notificationDuration": "Thời lượng thông báo",
+  "settings.notificationDurationDescription": "Thời lượng thông báo tính bằng mili giây"
 }
