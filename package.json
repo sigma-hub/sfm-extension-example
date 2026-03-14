@@ -3,7 +3,7 @@
   "id": "sigma.hello-world",
   "name": "Example",
   "previousName": "Hello World",
-  "version": "1.14.5",
+  "version": "1.14.6",
   "publisher": {
     "name": "sigma-hub",
     "url": "https://github.com/sigma-hub"
@@ -24,7 +24,8 @@
     "commands",
     "notifications",
     "dialogs",
-    "shell"
+    "shell",
+    "clipboard"
   ],
   "contributes": {
     "configuration": {

@@ -4,8 +4,117 @@
  * @typedef {import('@sigma-file-manager/api').ExtensionActivationContext} ExtensionActivationContext
  */
 
+let settingsChangeDisposable = null;
+
+const extensionMessages = {
+  fileAnalysisTitle: 'File analysis: {fileName}',
+  sha256Hash: 'SHA-256 Hash',
+  runningCommand: 'Running {command}...',
+  analyzingWith: 'Analyzing with {command}...',
+  exampleNotification: 'Example notification',
+  extensionNotification: 'Extension notification',
+  actionFromContextMenu: 'Action triggered from context menu',
+  countSelectedItems: 'Count selected items',
+  selectionCount: 'Selection count',
+  selectedItemsSummary: 'Selected {count} items: {files} files, {folders} folders',
+  showFileDetails: 'Show file details',
+  fileDetailsTitle: 'File details: {fileName}',
+  name: 'Name',
+  path: 'Path',
+  extension: 'Extension',
+  size: 'Size',
+  none: 'None',
+  copyPath: 'Copy path',
+  pathCopied: 'Path copied',
+  copiedToClipboard: 'Copied to clipboard',
+  analyzeFileDeno: 'Analyze file with Deno',
+  analyzingFile: 'Analyzing {fileName}',
+  preparingAnalysis: 'Preparing analysis...',
+  analysisCancelled: 'Analysis cancelled',
+  stoppedAnalyzing: 'Stopped analyzing {fileName}',
+  analysisFailed: 'Analysis failed',
+  analysisError: 'Analysis error',
+  failedAnalyzeFile: 'Failed to analyze file',
+  showSettings: 'Show current settings',
+  showSettingsDesc: 'Displays the current extension settings',
+  extensionSettings: 'Extension settings',
+  currentConfigNote: 'Current configuration for this extension. You can change these in Settings > Extensions.',
+  showContext: 'Show current context',
+  showContextDesc: 'Shows current path and selection info',
+  currentPath: 'Current Path',
+  selectedItems: 'Selected Items',
+  notAvailable: 'N/A',
+  currentContext: 'Current context',
+  directory: 'Directory',
+  file: 'File',
+  moreEntriesNotShown: '{count} more selected {entries} not shown',
+  oneEntry: 'entry',
+  nEntries: 'entries',
+  openFileDialog: 'Open file dialog',
+  openFileDialogDesc: 'Opens a native file picker',
+  selectFile: 'Select a file',
+  fileSelected: 'File selected',
+  youSelected: 'You selected',
+  demoProgress: 'Demo progress API',
+  demoProgressDesc: 'Demonstrates the progress notification API',
+  processing: 'Processing',
+  processed: 'Processed',
+  itemNOfTotal: 'Item {n} of {total}',
+  nItems: '{n} items',
+  processingCancelled: 'Processing cancelled',
+  processedBeforeCancel: 'Processed {processed} of {total} items before cancellation.',
+  denoJsonTools: 'Deno JSON tools',
+  denoJsonToolsDesc: 'Validates, formats, or minifies JSON using a bundled Deno script',
+  action: 'Action',
+  validateJson: 'Validate JSON',
+  prettyPrint: 'Pretty Print',
+  minify: 'Minify',
+  json: 'JSON',
+  result: 'Result',
+  run: 'Run',
+  jsonInputRequired: 'JSON input is required.',
+  noRuntimeFound: 'No supported runtime found. Install Deno or use Windows PowerShell.',
+  runtimeDiagnostics: 'Show runtime diagnostics',
+  runtimeDiagnosticsDesc: 'Displays runtime system info and includes PowerShell process diagnostics on Windows',
+  collectingSystemInfo: 'Collecting system info',
+  preparingRuntime: 'Preparing runtime...',
+  systemInfoCancelled: 'System info cancelled',
+  stoppedCollecting: 'Stopped collecting system info',
+  systemInfo: 'System info',
+  failedSystemInfo: 'Failed to get system info',
+  runtime: 'Runtime',
+  os: 'OS',
+  arch: 'Architecture',
+  hostname: 'Hostname',
+  home: 'Home',
+  osName: 'OS Name',
+  osVersion: 'OS Version',
+  powerShellDiagnostics: 'PowerShell Process Diagnostics',
+  runningProcesses: 'Running Processes',
+  topCpuProcesses: 'Top CPU Processes',
+  noProcessData: 'No process data returned.',
+  diagnosticsUnavailable: 'PowerShell process diagnostics are unavailable.',
+};
+
+function formatMessage(template, params) {
+  if (!params) {
+    return template;
+  }
+
+  return String(template).replace(/\{(\w+)\}/g, (fullMatch, paramKey) => {
+    return Object.prototype.hasOwnProperty.call(params, paramKey)
+      ? String(params[paramKey])
+      : fullMatch;
+  });
+}
+
 function getT() {
-  return (key, params) => sigma?.i18n?.extensionT?.(key, params) ?? key;
+  return (key, params) => {
+    const translated = sigma.i18n.extensionT(key, params);
+    return translated === `extensions.sigma.hello-world.${key}`
+      ? formatMessage(extensionMessages[key] ?? key, params)
+      : translated;
+  };
 }
 
 function sleep(ms) {
@@ -251,9 +360,9 @@ async function runFirstAvailableCommandWithProgress(commandCandidates, progress,
   throw latestError || new Error('No available command candidates');
 }
 
-function registerContextMenuHandlers(context) {
+async function registerContextMenuHandlers(context) {
   const t = getT();
-  const fileAnalysisScriptPath = sigma.platform.joinPath(context.extensionPath, 'scripts', 'file-analysis.js');
+  const fileAnalysisScriptPath = await sigma.platform.joinPath(context.extensionPath, 'scripts', 'file-analysis.js');
 
   sigma.contextMenu.registerItem(
     {
@@ -352,7 +461,7 @@ function registerContextMenuHandlers(context) {
       const entry = menuContext.selectedEntries[0];
 
       if (entry) {
-        await navigator.clipboard.writeText(entry.path);
+        await sigma.ui.copyText(entry.path);
 
         sigma.ui.showNotification({
           title: t('pathCopied'),
@@ -454,10 +563,10 @@ function registerContextMenuHandlers(context) {
   );
 }
 
-function registerCommands(context) {
+async function registerCommands(context) {
   const t = getT();
-  const jsonToolsScriptPath = sigma.platform.joinPath(context.extensionPath, 'scripts', 'json-tools.js');
-  const runtimeInfoScriptPath = sigma.platform.joinPath(context.extensionPath, 'scripts', 'runtime-info.js');
+  const jsonToolsScriptPath = await sigma.platform.joinPath(context.extensionPath, 'scripts', 'json-tools.js');
+  const runtimeInfoScriptPath = await sigma.platform.joinPath(context.extensionPath, 'scripts', 'runtime-info.js');
 
   sigma.commands.registerCommand(
     { id: 'show-settings', title: t('showSettings'), description: t('showSettingsDesc') },
@@ -490,9 +599,9 @@ function registerCommands(context) {
 
   sigma.commands.registerCommand(
     { id: 'show-context', title: t('showContext'), description: t('showContextDesc') },
-    () => {
-      const currentPath = sigma.context.getCurrentPath();
-      const selectedEntries = sigma.context.getSelectedEntries();
+    async () => {
+      const currentPath = await sigma.context.getCurrentPath();
+      const selectedEntries = await sigma.context.getSelectedEntries();
 
       const content = [
         sigma.ui.input({ id: 'currentPath', label: t('currentPath'), value: currentPath || t('notAvailable'), disabled: true }),
@@ -852,7 +961,7 @@ function registerCommands(context) {
   );
 }
 
-async function activate(context) {
+export async function activate(context) {
   await sigma.i18n.mergeFromPath('locales');
 
   console.log('[Example] Extension activated!');
@@ -864,18 +973,19 @@ async function activate(context) {
   const settings = await sigma.settings.getAll();
   console.log('[Example] Current settings:', settings);
 
-  sigma.settings.onChange('showNotifications', (newValue, oldValue) => {
+  settingsChangeDisposable = sigma.settings.onChange('showNotifications', (newValue, oldValue) => {
     console.log(`[Example] showNotifications changed from ${oldValue} to ${newValue}`);
   });
 
-  registerContextMenuHandlers(context);
-  registerCommands(context);
+  await registerContextMenuHandlers(context);
+  await registerCommands(context);
 
   console.log('[Example] All handlers registered!');
 }
 
-async function deactivate() {
-  console.log('[Example] Extension deactivated!');
+export async function deactivate() {
+  if (settingsChangeDisposable) {
+    settingsChangeDisposable.dispose();
+    settingsChangeDisposable = null;
+  }
 }
-
-module.exports = { activate, deactivate };
