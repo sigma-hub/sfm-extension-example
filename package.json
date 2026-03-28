@@ -3,7 +3,7 @@
   "id": "sigma.hello-world",
   "name": "Example",
   "previousName": "Hello World",
-  "version": "1.14.6",
+  "version": "1.14.7",
   "publisher": {
     "name": "sigma-hub",
     "url": "https://github.com/sigma-hub"

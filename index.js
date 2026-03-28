@@ -4,136 +4,27 @@
  * @typedef {import('@sigma-file-manager/api').ExtensionActivationContext} ExtensionActivationContext
  */
 
+import { t } from './lib/translator.js';
+import {
+  escapeForPowerShellSingleQuotes,
+  getDenoCommandCandidates,
+  getErrorMessage,
+  runFirstAvailableCommand,
+  runFirstAvailableCommandWithProgress,
+  runPowerShellScript,
+  getWindowsPowerShellCandidates,
+} from './lib/shell-runtime.js';
+
+const DEBUG = false;
+
+function debugLog(...args) {
+  if (DEBUG) console.log(...args);
+}
+
 let settingsChangeDisposable = null;
-
-const extensionMessages = {
-  fileAnalysisTitle: 'File analysis: {fileName}',
-  sha256Hash: 'SHA-256 Hash',
-  runningCommand: 'Running {command}...',
-  analyzingWith: 'Analyzing with {command}...',
-  exampleNotification: 'Example notification',
-  extensionNotification: 'Extension notification',
-  actionFromContextMenu: 'Action triggered from context menu',
-  countSelectedItems: 'Count selected items',
-  selectionCount: 'Selection count',
-  selectedItemsSummary: 'Selected {count} items: {files} files, {folders} folders',
-  showFileDetails: 'Show file details',
-  fileDetailsTitle: 'File details: {fileName}',
-  name: 'Name',
-  path: 'Path',
-  extension: 'Extension',
-  size: 'Size',
-  none: 'None',
-  copyPath: 'Copy path',
-  pathCopied: 'Path copied',
-  copiedToClipboard: 'Copied to clipboard',
-  analyzeFileDeno: 'Analyze file with Deno',
-  analyzingFile: 'Analyzing {fileName}',
-  preparingAnalysis: 'Preparing analysis...',
-  analysisCancelled: 'Analysis cancelled',
-  stoppedAnalyzing: 'Stopped analyzing {fileName}',
-  analysisFailed: 'Analysis failed',
-  analysisError: 'Analysis error',
-  failedAnalyzeFile: 'Failed to analyze file',
-  showSettings: 'Show current settings',
-  showSettingsDesc: 'Displays the current extension settings',
-  extensionSettings: 'Extension settings',
-  currentConfigNote: 'Current configuration for this extension. You can change these in Settings > Extensions.',
-  showContext: 'Show current context',
-  showContextDesc: 'Shows current path and selection info',
-  currentPath: 'Current Path',
-  selectedItems: 'Selected Items',
-  notAvailable: 'N/A',
-  currentContext: 'Current context',
-  directory: 'Directory',
-  file: 'File',
-  moreEntriesNotShown: '{count} more selected {entries} not shown',
-  oneEntry: 'entry',
-  nEntries: 'entries',
-  openFileDialog: 'Open file dialog',
-  openFileDialogDesc: 'Opens a native file picker',
-  selectFile: 'Select a file',
-  fileSelected: 'File selected',
-  youSelected: 'You selected',
-  demoProgress: 'Demo progress API',
-  demoProgressDesc: 'Demonstrates the progress notification API',
-  processing: 'Processing',
-  processed: 'Processed',
-  itemNOfTotal: 'Item {n} of {total}',
-  nItems: '{n} items',
-  processingCancelled: 'Processing cancelled',
-  processedBeforeCancel: 'Processed {processed} of {total} items before cancellation.',
-  denoJsonTools: 'Deno JSON tools',
-  denoJsonToolsDesc: 'Validates, formats, or minifies JSON using a bundled Deno script',
-  action: 'Action',
-  validateJson: 'Validate JSON',
-  prettyPrint: 'Pretty Print',
-  minify: 'Minify',
-  json: 'JSON',
-  result: 'Result',
-  run: 'Run',
-  jsonInputRequired: 'JSON input is required.',
-  noRuntimeFound: 'No supported runtime found. Install Deno or use Windows PowerShell.',
-  runtimeDiagnostics: 'Show runtime diagnostics',
-  runtimeDiagnosticsDesc: 'Displays runtime system info and includes PowerShell process diagnostics on Windows',
-  collectingSystemInfo: 'Collecting system info',
-  preparingRuntime: 'Preparing runtime...',
-  systemInfoCancelled: 'System info cancelled',
-  stoppedCollecting: 'Stopped collecting system info',
-  systemInfo: 'System info',
-  failedSystemInfo: 'Failed to get system info',
-  runtime: 'Runtime',
-  os: 'OS',
-  arch: 'Architecture',
-  hostname: 'Hostname',
-  home: 'Home',
-  osName: 'OS Name',
-  osVersion: 'OS Version',
-  powerShellDiagnostics: 'PowerShell Process Diagnostics',
-  runningProcesses: 'Running Processes',
-  topCpuProcesses: 'Top CPU Processes',
-  noProcessData: 'No process data returned.',
-  diagnosticsUnavailable: 'PowerShell process diagnostics are unavailable.',
-};
-
-function formatMessage(template, params) {
-  if (!params) {
-    return template;
-  }
-
-  return String(template).replace(/\{(\w+)\}/g, (fullMatch, paramKey) => {
-    return Object.prototype.hasOwnProperty.call(params, paramKey)
-      ? String(params[paramKey])
-      : fullMatch;
-  });
-}
-
-function getT() {
-  return (key, params) => {
-    const translated = sigma.i18n.extensionT(key, params);
-    return translated === `extensions.sigma.hello-world.${key}`
-      ? formatMessage(extensionMessages[key] ?? key, params)
-      : translated;
-  };
-}
 
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-function getErrorMessage(error) {
-  if (error instanceof Error) return error.message;
-  if (typeof error === 'string') return error;
-  return String(error);
-}
-
-function isCommandNotFoundError(error) {
-  const errorMessage = getErrorMessage(error).toLowerCase();
-  return (
-    errorMessage.includes('not found')
-    || errorMessage.includes('does not exist')
-    || errorMessage.includes('cannot find')
-  );
 }
 
 function formatFileSize(sizeBytes) {
@@ -144,7 +35,6 @@ function formatFileSize(sizeBytes) {
 }
 
 function showFileAnalysisModal(fileName, hashValue) {
-  const t = getT();
   sigma.ui.createModal({
     title: t('fileAnalysisTitle', { fileName }),
     width: 760,
@@ -159,209 +49,7 @@ function showFileAnalysisModal(fileName, hashValue) {
   });
 }
 
-function escapeForPowerShellSingleQuotes(text) {
-  return String(text).replace(/'/g, "''");
-}
-
-function getWindowsPowerShellCandidates(script) {
-  return [
-    { command: 'powershell', args: ['-NoProfile', '-Command', script] },
-    { command: 'pwsh', args: ['-NoProfile', '-Command', script] },
-    { command: 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe', args: ['-NoProfile', '-Command', script] },
-  ];
-}
-
-async function runPowerShellScript(script, options = {}) {
-  if (!sigma.platform.isWindows) {
-    throw new Error('PowerShell script execution is only supported on Windows.');
-  }
-
-  const timeout = typeof options.timeout === 'number' && options.timeout > 0
-    ? options.timeout
-    : 10000;
-  const parseOutput = typeof options.parseOutput === 'function'
-    ? options.parseOutput
-    : ({ stdout }) => stdout;
-  const commandCandidates = getWindowsPowerShellCandidates(script);
-  let latestError = null;
-
-  for (const commandCandidate of commandCandidates) {
-    let timeoutHandle = null;
-    let timedOut = false;
-    let abortSignalListener = null;
-    let runningCommand = null;
-
-    try {
-      runningCommand = await sigma.shell.runWithProgress(
-        commandCandidate.command,
-        commandCandidate.args,
-        () => {},
-      );
-
-      if (timeout > 0) {
-        timeoutHandle = setTimeout(() => {
-          timedOut = true;
-          if (runningCommand) {
-            runningCommand.cancel().catch(() => {});
-          }
-        }, timeout);
-      }
-
-      if (options.signal) {
-        abortSignalListener = () => {
-          if (runningCommand) {
-            runningCommand.cancel().catch(() => {});
-          }
-        };
-
-        if (options.signal.aborted) {
-          abortSignalListener();
-        } else {
-          options.signal.addEventListener('abort', abortSignalListener, { once: true });
-        }
-      }
-
-      const result = await runningCommand.result;
-      const commandText = `${commandCandidate.command} ${commandCandidate.args.join(' ')}`;
-      const executionError = result.code === 0
-        ? undefined
-        : new Error(result.stderr || `${commandCandidate.command} exited with code ${result.code}`);
-
-      if (result.code !== 0) {
-        throw executionError;
-      }
-
-      return parseOutput({
-        stdout: result.stdout,
-        stderr: result.stderr,
-        error: executionError,
-        exitCode: result.code,
-        signal: null,
-        timedOut,
-        command: commandText,
-      });
-    } catch (error) {
-      latestError = error;
-      if (isCommandNotFoundError(error)) {
-        continue;
-      }
-      throw error;
-    } finally {
-      if (timeoutHandle) {
-        clearTimeout(timeoutHandle);
-      }
-      if (options.signal && abortSignalListener) {
-        options.signal.removeEventListener('abort', abortSignalListener);
-      }
-    }
-  }
-
-  throw latestError || new Error('No available PowerShell command candidates');
-}
-
-async function runFirstAvailableCommand(commandCandidates) {
-  let latestError = null;
-
-  for (const commandCandidate of commandCandidates) {
-    try {
-      const result = await sigma.shell.run(commandCandidate.command, commandCandidate.args);
-      return { result, commandName: commandCandidate.command };
-    } catch (error) {
-      latestError = error;
-      if (isCommandNotFoundError(error)) {
-        continue;
-      }
-      throw error;
-    }
-  }
-
-  throw latestError || new Error('No available command candidates');
-}
-
-async function getDenoCommandCandidates(denoArgs) {
-  const commandCandidates = [];
-  const addedCommands = new Set();
-
-  try {
-    const denoBinaryPath = await sigma.binary.getPath('deno');
-    if (denoBinaryPath && !addedCommands.has(denoBinaryPath)) {
-      commandCandidates.push({ command: denoBinaryPath, args: denoArgs });
-      addedCommands.add(denoBinaryPath);
-    }
-  } catch {
-  }
-
-  if (!addedCommands.has('deno')) {
-    commandCandidates.push({ command: 'deno', args: denoArgs });
-  }
-
-  return commandCandidates;
-}
-
-async function runFirstAvailableCommandWithProgress(commandCandidates, progress, cancellationToken) {
-  let latestError = null;
-  let progressValue = 8;
-
-  for (const commandCandidate of commandCandidates) {
-    if (cancellationToken.isCancellationRequested) {
-      return { cancelled: true };
-    }
-
-    try {
-      const t = getT();
-      progress.report({
-        description: t('runningCommand', { command: commandCandidate.command }),
-        increment: progressValue,
-      });
-      progressValue = 0;
-
-      const runningCommand = await sigma.shell.runWithProgress(
-        commandCandidate.command,
-        commandCandidate.args,
-        () => {
-          if (!cancellationToken.isCancellationRequested) {
-            progress.report({
-              description: t('analyzingWith', { command: commandCandidate.command }),
-              increment: 0.4,
-            });
-          }
-        },
-      );
-
-      const cancellationListener = cancellationToken.onCancellationRequested(() => {
-        runningCommand.cancel().catch(() => {});
-      });
-
-      try {
-        const result = await runningCommand.result;
-        return {
-          cancelled: false,
-          result,
-          commandName: commandCandidate.command,
-        };
-      } finally {
-        cancellationListener.dispose();
-      }
-    } catch (error) {
-      latestError = error;
-
-      if (cancellationToken.isCancellationRequested) {
-        return { cancelled: true };
-      }
-
-      if (isCommandNotFoundError(error)) {
-        continue;
-      }
-
-      throw error;
-    }
-  }
-
-  throw latestError || new Error('No available command candidates');
-}
-
 async function registerContextMenuHandlers(context) {
-  const t = getT();
   const fileAnalysisScriptPath = await sigma.platform.joinPath(context.extensionPath, 'scripts', 'file-analysis.js');
 
   sigma.contextMenu.registerItem(
@@ -375,7 +63,7 @@ async function registerContextMenuHandlers(context) {
     async (menuContext) => {
       const showNotifications = await sigma.settings.get('showNotifications');
       if (!showNotifications) {
-        console.log('[Example] Notifications disabled, skipping');
+        debugLog('[Example] Notifications disabled, skipping');
         return;
       }
 
@@ -519,6 +207,7 @@ async function registerContextMenuHandlers(context) {
                 ],
                 progress,
                 cancellationToken,
+                t,
               );
               return executionResult;
             } catch (error) {
@@ -564,7 +253,6 @@ async function registerContextMenuHandlers(context) {
 }
 
 async function registerCommands(context) {
-  const t = getT();
   const jsonToolsScriptPath = await sigma.platform.joinPath(context.extensionPath, 'scripts', 'json-tools.js');
   const runtimeInfoScriptPath = await sigma.platform.joinPath(context.extensionPath, 'scripts', 'runtime-info.js');
 
@@ -675,7 +363,7 @@ async function registerCommands(context) {
         },
         async (progress, token) => {
           token.onCancellationRequested(() => {
-            console.log('[Example] Progress cancelled by user');
+            debugLog('[Example] Progress cancelled by user');
           });
 
           for (let itemIndex = 0; itemIndex < totalItems; itemIndex++) {
@@ -839,6 +527,7 @@ async function registerCommands(context) {
                 ],
                 progress,
                 cancellationToken,
+                t,
               );
               return executionResult;
             } catch (error) {
@@ -964,23 +653,22 @@ async function registerCommands(context) {
 export async function activate(context) {
   await sigma.i18n.mergeFromPath('locales');
 
-  console.log('[Example] Extension activated!');
-  console.log('[Example] Extension path:', context.extensionPath);
+  debugLog('[Example] Extension activated!', context.extensionPath);
 
   const appVersion = await sigma.context.getAppVersion();
-  console.log('[Example] App version:', appVersion);
+  debugLog('[Example] App version:', appVersion);
 
   const settings = await sigma.settings.getAll();
-  console.log('[Example] Current settings:', settings);
+  debugLog('[Example] Current settings:', settings);
 
   settingsChangeDisposable = sigma.settings.onChange('showNotifications', (newValue, oldValue) => {
-    console.log(`[Example] showNotifications changed from ${oldValue} to ${newValue}`);
+    debugLog(`[Example] showNotifications changed from ${oldValue} to ${newValue}`);
   });
 
   await registerContextMenuHandlers(context);
   await registerCommands(context);
 
-  console.log('[Example] All handlers registered!');
+  debugLog('[Example] All handlers registered!');
 }
 
 export async function deactivate() {
