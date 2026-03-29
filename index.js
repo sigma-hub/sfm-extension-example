@@ -1,0 +1,679 @@
+// @ts-check
+
+/**
+ * @typedef {import('@sigma-file-manager/api').ExtensionActivationContext} ExtensionActivationContext
+ */
+
+import { t } from './lib/translator.js';
+import {
+  escapeForPowerShellSingleQuotes,
+  getDenoCommandCandidates,
+  getErrorMessage,
+  runFirstAvailableCommand,
+  runFirstAvailableCommandWithProgress,
+  runPowerShellScript,
+  getWindowsPowerShellCandidates,
+} from './lib/shell-runtime.js';
+
+const DEBUG = false;
+
+function debugLog(...args) {
+  if (DEBUG) console.log(...args);
+}
+
+let settingsChangeDisposable = null;
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function formatFileSize(sizeBytes) {
+  if (sizeBytes == null) return 'Unknown';
+  if (sizeBytes < 1024) return `${sizeBytes} B`;
+  if (sizeBytes < 1048576) return `${(sizeBytes / 1024).toFixed(2)} KB`;
+  return `${(sizeBytes / 1048576).toFixed(2)} MB`;
+}
+
+function showFileAnalysisModal(fileName, hashValue) {
+  sigma.ui.createModal({
+    title: t('fileAnalysisTitle', { fileName }),
+    width: 760,
+    content: [
+      sigma.ui.input({
+        id: 'fileHash',
+        label: t('sha256Hash'),
+        value: hashValue,
+        disabled: true,
+      }),
+    ],
+  });
+}
+
+async function registerContextMenuHandlers(context) {
+  const fileAnalysisScriptPath = await sigma.platform.joinPath(context.extensionPath, 'scripts', 'file-analysis.js');
+
+  sigma.contextMenu.registerItem(
+    {
+      id: 'example-notification',
+      title: t('exampleNotification'),
+      icon: 'Bell',
+      group: 'extensions',
+      order: 1
+    },
+    async (menuContext) => {
+      const showNotifications = await sigma.settings.get('showNotifications');
+      if (!showNotifications) {
+        debugLog('[Example] Notifications disabled, skipping');
+        return;
+      }
+
+      const duration = await sigma.settings.get('notificationDuration');
+      const entry = menuContext.selectedEntries[0];
+
+      sigma.ui.showNotification({
+        title: t('extensionNotification'),
+        subtitle: t('actionFromContextMenu'),
+        description: entry ? entry.name : '',
+        type: 'info',
+        duration: duration || 3000
+      });
+    }
+  );
+
+  sigma.contextMenu.registerItem(
+    {
+      id: 'count-selected',
+      title: t('countSelectedItems'),
+      icon: 'Hash',
+      group: 'extensions',
+      order: 2,
+      when: {
+        selectionType: 'multiple'
+      }
+    },
+    async (menuContext) => {
+      const count = menuContext.selectedEntries.length;
+      const files = menuContext.selectedEntries.filter(entry => !entry.isDirectory).length;
+      const folders = menuContext.selectedEntries.filter(entry => entry.isDirectory).length;
+
+      sigma.ui.showNotification({
+        title: t('selectionCount'),
+        subtitle: t('selectedItemsSummary', { count, files, folders }),
+        type: 'success',
+        duration: 4000
+      });
+    }
+  );
+
+  sigma.contextMenu.registerItem(
+    {
+      id: 'file-info',
+      title: t('showFileDetails'),
+      icon: 'Info',
+      group: 'extensions',
+      order: 3,
+      when: {
+        selectionType: 'single',
+        entryType: 'file'
+      }
+    },
+    async (menuContext) => {
+      const file = menuContext.selectedEntries[0];
+      if (!file) return;
+
+      sigma.ui.createModal({
+        title: t('fileDetailsTitle', { fileName: file.name }),
+        width: 640,
+        content: [
+          sigma.ui.input({ id: 'name', label: t('name'), value: file.name, disabled: true }),
+          sigma.ui.input({ id: 'path', label: t('path'), value: file.path, disabled: true }),
+          sigma.ui.input({ id: 'extension', label: t('extension'), value: file.extension || t('none'), disabled: true }),
+          sigma.ui.input({ id: 'size', label: t('size'), value: formatFileSize(file.size), disabled: true }),
+        ],
+      });
+    }
+  );
+
+  sigma.contextMenu.registerItem(
+    {
+      id: 'copy-path',
+      title: t('copyPath'),
+      icon: 'Copy',
+      group: 'extensions',
+      order: 4,
+      when: {
+        selectionType: 'single'
+      }
+    },
+    async (menuContext) => {
+      const entry = menuContext.selectedEntries[0];
+
+      if (entry) {
+        await sigma.ui.copyText(entry.path);
+
+        sigma.ui.showNotification({
+          title: t('pathCopied'),
+          subtitle: t('copiedToClipboard'),
+          description: entry.path,
+          type: 'success',
+          duration: 2000
+        });
+      }
+    }
+  );
+
+  sigma.contextMenu.registerItem(
+    {
+      id: 'analyze-file-deno',
+      title: t('analyzeFileDeno'),
+      icon: 'FileSearch',
+      group: 'extensions',
+      order: 5,
+      when: {
+        selectionType: 'single',
+        entryType: 'file'
+      }
+    },
+    async (menuContext) => {
+      const file = menuContext.selectedEntries[0];
+      if (!file) {
+        return;
+      }
+
+      const powerShellPath = escapeForPowerShellSingleQuotes(file.path);
+      const powerShellScript = `$targetPath = '${powerShellPath}'; $hash = (Get-FileHash -LiteralPath $targetPath -Algorithm SHA256).Hash.ToLower(); [PSCustomObject]@{ hash = $hash } | ConvertTo-Json -Compress`;
+
+      try {
+        const fallbackCandidates = sigma.platform.isWindows
+          ? getWindowsPowerShellCandidates(powerShellScript)
+          : [];
+        const analysisExecution = await sigma.ui.withProgress(
+          {
+            subtitle: t('analyzingFile', { fileName: file.name }),
+            location: 'notification',
+            cancellable: true,
+          },
+          async (progress, cancellationToken) => {
+            progress.report({
+              description: t('preparingAnalysis'),
+              increment: 6,
+            });
+
+            try {
+              const executionResult = await runFirstAvailableCommandWithProgress(
+                [
+                  ...(await getDenoCommandCandidates(['run', '--quiet', '--allow-read', fileAnalysisScriptPath, file.path])),
+                  ...fallbackCandidates,
+                ],
+                progress,
+                cancellationToken,
+                t,
+              );
+              return executionResult;
+            } catch (error) {
+              if (cancellationToken.isCancellationRequested) {
+                return { cancelled: true };
+              }
+              throw error;
+            }
+          },
+        );
+
+        if (analysisExecution.cancelled) {
+          sigma.ui.showNotification({
+            title: t('analysisCancelled'),
+            subtitle: t('stoppedAnalyzing', { fileName: file.name }),
+            type: 'warning'
+          });
+          return;
+        }
+
+        const { result, commandName } = analysisExecution;
+
+        if (result.code !== 0) {
+          sigma.ui.showNotification({
+            title: t('analysisFailed'),
+            subtitle: result.stderr || `${commandName} exited with an error`,
+            type: 'error'
+          });
+          return;
+        }
+
+        const analysis = JSON.parse(result.stdout.trim());
+        showFileAnalysisModal(file.name, analysis.hash);
+      } catch (error) {
+        sigma.ui.showNotification({
+          title: t('analysisError'),
+          subtitle: getErrorMessage(error) || t('failedAnalyzeFile'),
+          type: 'error'
+        });
+      }
+    }
+  );
+}
+
+async function registerCommands(context) {
+  const jsonToolsScriptPath = await sigma.platform.joinPath(context.extensionPath, 'scripts', 'json-tools.js');
+  const runtimeInfoScriptPath = await sigma.platform.joinPath(context.extensionPath, 'scripts', 'runtime-info.js');
+
+  sigma.commands.registerCommand(
+    { id: 'show-settings', title: t('showSettings'), description: t('showSettingsDesc') },
+    async () => {
+      const allSettings = await sigma.settings.getAll();
+      const settingsContent = [];
+
+      for (const [key, value] of Object.entries(allSettings)) {
+        settingsContent.push(
+          sigma.ui.input({
+            id: key,
+            label: key,
+            value: String(value),
+            disabled: true,
+          })
+        );
+      }
+
+      sigma.ui.createModal({
+        title: t('extensionSettings'),
+        width: 640,
+        content: [
+          sigma.ui.text(t('currentConfigNote')),
+          sigma.ui.separator(),
+          ...settingsContent,
+        ],
+      });
+    }
+  );
+
+  sigma.commands.registerCommand(
+    { id: 'show-context', title: t('showContext'), description: t('showContextDesc') },
+    async () => {
+      const currentPath = await sigma.context.getCurrentPath();
+      const selectedEntries = await sigma.context.getSelectedEntries();
+
+      const content = [
+        sigma.ui.input({ id: 'currentPath', label: t('currentPath'), value: currentPath || t('notAvailable'), disabled: true }),
+        sigma.ui.separator(),
+        sigma.ui.input({ id: 'selectedCount', label: t('selectedItems'), value: String(selectedEntries.length), disabled: true }),
+      ];
+
+      if (selectedEntries.length > 0) {
+        content.push(sigma.ui.separator());
+        const maxDisplay = Math.min(selectedEntries.length, 2);
+        for (let entryIndex = 0; entryIndex < maxDisplay; entryIndex++) {
+          const entry = selectedEntries[entryIndex];
+          const entryTypeLabel = entry.isDirectory ? t('directory') : t('file');
+          content.push(
+            sigma.ui.input({
+              id: `entry-${entryIndex}`,
+              label: entryTypeLabel,
+              value: entry.path,
+              disabled: true,
+            })
+          );
+        }
+        if (selectedEntries.length > maxDisplay) {
+          const hiddenEntriesCount = selectedEntries.length - maxDisplay;
+          const hiddenEntriesLabel = hiddenEntriesCount === 1 ? t('oneEntry') : t('nEntries');
+          content.push(sigma.ui.text(t('moreEntriesNotShown', { count: hiddenEntriesCount, entries: hiddenEntriesLabel })));
+        }
+      }
+
+      sigma.ui.createModal({
+        title: t('currentContext'),
+        width: 720,
+        content,
+      });
+    }
+  );
+
+  sigma.commands.registerCommand(
+    { id: 'open-file-dialog', title: t('openFileDialog'), description: t('openFileDialogDesc') },
+    async () => {
+      const result = await sigma.dialog.openFile({
+        title: t('selectFile'),
+        filters: [
+          { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif'] },
+          { name: 'All Files', extensions: ['*'] }
+        ]
+      });
+
+      if (result) {
+        sigma.ui.showNotification({
+          title: t('fileSelected'),
+          subtitle: t('youSelected'),
+          description: Array.isArray(result) ? result.join(', ') : result,
+          type: 'success'
+        });
+      }
+    }
+  );
+
+  sigma.commands.registerCommand(
+    { id: 'demo-progress', title: t('demoProgress'), description: t('demoProgressDesc') },
+    async () => {
+      const totalItems = 10;
+      let processedItems = 0;
+
+      const result = await sigma.ui.withProgress(
+        {
+          subtitle: t('processing'),
+          location: 'notification',
+          cancellable: true
+        },
+        async (progress, token) => {
+          token.onCancellationRequested(() => {
+            debugLog('[Example] Progress cancelled by user');
+          });
+
+          for (let itemIndex = 0; itemIndex < totalItems; itemIndex++) {
+            if (token.isCancellationRequested) {
+              return { completed: false, processed: processedItems };
+            }
+
+            progress.report({
+              description: t('itemNOfTotal', { n: itemIndex + 1, total: totalItems }),
+              increment: 100 / totalItems
+            });
+
+            await sleep(500);
+            processedItems++;
+          }
+
+          progress.report({
+            subtitle: t('processed'),
+            description: t('nItems', { n: processedItems }),
+            increment: 100,
+          });
+
+          return { completed: true, processed: processedItems };
+        }
+      );
+
+      if (!result.completed) {
+        sigma.ui.showNotification({
+          title: t('processingCancelled'),
+          subtitle: t('processedBeforeCancel', { processed: result.processed, total: totalItems }),
+          type: 'warning'
+        });
+      }
+    }
+  );
+
+  sigma.commands.registerCommand(
+    {
+      id: 'deno-json-tools',
+      title: t('denoJsonTools'),
+      description: t('denoJsonToolsDesc'),
+    },
+    async () => {
+      return new Promise((resolve) => {
+        const modal = sigma.ui.createModal({
+          title: t('denoJsonTools'),
+          width: 720,
+          content: [
+            sigma.ui.select({
+              id: 'action',
+              label: t('action'),
+              options: [
+                { value: 'validate', label: t('validateJson') },
+                { value: 'pretty', label: t('prettyPrint') },
+                { value: 'minify', label: t('minify') },
+              ],
+              value: 'validate',
+            }),
+            sigma.ui.textarea({
+              id: 'jsonInput',
+              label: t('json'),
+              placeholder: '{\n  "name": "Sigma"\n}',
+              rows: 10,
+            }),
+            sigma.ui.textarea({
+              id: 'resultOutput',
+              label: t('result'),
+              value: '',
+              rows: 8,
+              disabled: true,
+            }),
+          ],
+          buttons: [
+            { id: 'run', label: t('run'), variant: 'primary', shortcut: { key: 'Enter', modifiers: ['ctrl'] } },
+          ],
+        });
+
+        modal.onSubmit(async (values, buttonId) => {
+          if (buttonId !== 'run') return false;
+
+          const action = typeof values.action === 'string' ? values.action : 'validate';
+          const jsonInput = typeof values.jsonInput === 'string' ? values.jsonInput.trim() : '';
+
+          if (!jsonInput) {
+            modal.updateElement('resultOutput', {
+              value: t('jsonInputRequired'),
+            });
+            return false;
+          }
+
+          try {
+            const escapedJsonInput = escapeForPowerShellSingleQuotes(jsonInput);
+            const escapedAction = escapeForPowerShellSingleQuotes(action);
+            const powerShellJsonToolsScript = `$jsonInput = '${escapedJsonInput}'; $action = '${escapedAction}'; try { $parsed = $jsonInput | ConvertFrom-Json; switch ($action) { 'validate' { $output = 'JSON is valid.' } 'pretty' { $output = $parsed | ConvertTo-Json -Depth 100 } 'minify' { $output = ($parsed | ConvertTo-Json -Depth 100 -Compress) } default { throw "Unsupported action: $action" } }; [PSCustomObject]@{ output = [string]$output } | ConvertTo-Json -Compress } catch { Write-Error $_.Exception.Message; exit 1 }`;
+            const fallbackCandidates = sigma.platform.isWindows
+              ? getWindowsPowerShellCandidates(powerShellJsonToolsScript)
+              : [];
+            const denoCommandCandidates = await getDenoCommandCandidates(['run', '--quiet', jsonToolsScriptPath, action, jsonInput]);
+            const { result, commandName } = await runFirstAvailableCommand([
+              ...denoCommandCandidates,
+              ...fallbackCandidates,
+            ]);
+
+            if (result.code !== 0) {
+              modal.updateElement('resultOutput', {
+                value: result.stderr || `${commandName} exited with a non-zero code`,
+              });
+              return false;
+            }
+
+            const parsedResult = JSON.parse(result.stdout.trim());
+            modal.updateElement('resultOutput', {
+              value: parsedResult.output,
+            });
+          } catch (error) {
+            modal.updateElement('resultOutput', {
+              value: getErrorMessage(error) || t('noRuntimeFound'),
+            });
+          }
+
+          return false;
+        });
+
+        modal.onClose(() => resolve());
+      });
+    }
+  );
+
+  sigma.commands.registerCommand(
+    { id: 'runtime-diagnostics', title: t('runtimeDiagnostics'), description: t('runtimeDiagnosticsDesc') },
+    async () => {
+      try {
+        const powerShellSystemInfoScript = `$computerInfo = Get-ComputerInfo; $osName = if ($computerInfo.OsName) { $computerInfo.OsName } else { 'Windows' }; $osVersion = if ($computerInfo.OsVersion) { $computerInfo.OsVersion } else { '' }; $hostName = $env:COMPUTERNAME; $homePath = $env:USERPROFILE; [PSCustomObject]@{ os = 'windows'; arch = $env:PROCESSOR_ARCHITECTURE; denoVersion = ''; v8Version = ''; typescriptVersion = ''; hostname = $hostName; homeDir = $homePath; osName = $osName; osVersion = $osVersion } | ConvertTo-Json -Compress`;
+        const fallbackCandidates = sigma.platform.isWindows
+          ? getWindowsPowerShellCandidates(powerShellSystemInfoScript)
+          : [];
+        const systemInfoExecution = await sigma.ui.withProgress(
+          {
+            subtitle: t('collectingSystemInfo'),
+            location: 'notification',
+            cancellable: true,
+          },
+          async (progress, cancellationToken) => {
+            progress.report({
+              description: t('preparingRuntime'),
+              increment: 6,
+            });
+
+            try {
+              const denoCommandCandidates = await getDenoCommandCandidates([
+                'run',
+                '--quiet',
+                '--allow-env',
+                '--allow-sys',
+                runtimeInfoScriptPath,
+              ]);
+              const executionResult = await runFirstAvailableCommandWithProgress(
+                [
+                  ...denoCommandCandidates,
+                  ...fallbackCandidates,
+                ],
+                progress,
+                cancellationToken,
+                t,
+              );
+              return executionResult;
+            } catch (error) {
+              if (cancellationToken.isCancellationRequested) {
+                return { cancelled: true };
+              }
+              throw error;
+            }
+          },
+        );
+
+        if (systemInfoExecution.cancelled) {
+          sigma.ui.showNotification({
+            title: t('systemInfoCancelled'),
+            subtitle: t('stoppedCollecting'),
+            type: 'warning'
+          });
+          return;
+        }
+
+        const { result, commandName } = systemInfoExecution;
+
+        if (result.code !== 0) {
+          sigma.ui.showNotification({
+            title: t('systemInfo'),
+            subtitle: result.stderr || `${commandName} failed to get system info`,
+            type: 'error'
+          });
+          return;
+        }
+
+        const info = JSON.parse(result.stdout.trim());
+        const runtimeLabel = commandName === 'deno' ? 'Deno' : 'PowerShell';
+        let processDiagnostics = null;
+        let processDiagnosticsErrorMessage = null;
+
+        if (sigma.platform.isWindows) {
+          try {
+            processDiagnostics = await runPowerShellScript(
+              '$topProcesses = Get-Process | Sort-Object CPU -Descending | Select-Object -First 5 ProcessName, Id, CPU; [PSCustomObject]@{ processCount = (Get-Process).Count; topProcesses = $topProcesses } | ConvertTo-Json -Compress',
+              {
+                timeout: 15000,
+                parseOutput: ({ stdout }) => JSON.parse(stdout),
+              },
+            );
+          } catch (error) {
+            processDiagnosticsErrorMessage = getErrorMessage(error) || 'PowerShell process diagnostics are unavailable.';
+          }
+        }
+
+        const infoContent = [
+          sigma.ui.input({ id: 'runtime', label: t('runtime'), value: runtimeLabel, disabled: true }),
+          sigma.ui.input({ id: 'os', label: t('os'), value: info.os, disabled: true }),
+          sigma.ui.input({ id: 'arch', label: t('arch'), value: info.arch, disabled: true }),
+          sigma.ui.separator(),
+          sigma.ui.input({ id: 'deno', label: 'Deno', value: info.denoVersion ? `v${info.denoVersion}` : t('notAvailable'), disabled: true }),
+          sigma.ui.input({ id: 'v8', label: 'V8', value: info.v8Version ? `v${info.v8Version}` : t('notAvailable'), disabled: true }),
+          sigma.ui.input({ id: 'typescript', label: 'TypeScript', value: info.typescriptVersion ? `v${info.typescriptVersion}` : t('notAvailable'), disabled: true }),
+          sigma.ui.separator(),
+          sigma.ui.input({ id: 'hostname', label: t('hostname'), value: info.hostname, disabled: true }),
+          sigma.ui.input({ id: 'home', label: t('home'), value: info.homeDir, disabled: true }),
+        ];
+
+        if (info.osName) {
+          infoContent.push(sigma.ui.input({ id: 'osName', label: t('osName'), value: info.osName, disabled: true }));
+        }
+        if (info.osVersion) {
+          infoContent.push(sigma.ui.input({ id: 'osVersion', label: t('osVersion'), value: info.osVersion, disabled: true }));
+        }
+        if (sigma.platform.isWindows) {
+          infoContent.push(sigma.ui.separator());
+          infoContent.push(sigma.ui.text(t('powerShellDiagnostics')));
+          if (processDiagnostics) {
+            const topProcesses = Array.isArray(processDiagnostics.topProcesses)
+              ? processDiagnostics.topProcesses
+              : processDiagnostics.topProcesses
+                ? [processDiagnostics.topProcesses]
+                : [];
+            const topProcessesText = topProcesses
+              .map(processItem => `${processItem.ProcessName} (PID ${processItem.Id}) CPU ${Number(processItem.CPU || 0).toFixed(2)}`)
+              .join('\n');
+
+            infoContent.push(
+              sigma.ui.input({
+                id: 'processCount',
+                label: t('runningProcesses'),
+                value: String(processDiagnostics.processCount || 0),
+                disabled: true,
+              })
+            );
+            infoContent.push(
+              sigma.ui.textarea({
+                id: 'topProcesses',
+                label: t('topCpuProcesses'),
+                value: topProcessesText || t('noProcessData'),
+                rows: 8,
+                disabled: true,
+              })
+            );
+          } else {
+            infoContent.push(
+              sigma.ui.text(processDiagnosticsErrorMessage || t('diagnosticsUnavailable'))
+            );
+          }
+        }
+
+        sigma.ui.createModal({
+          title: t('systemInfo'),
+          width: 720,
+          content: infoContent,
+        });
+      } catch (error) {
+        sigma.ui.showNotification({
+          title: t('systemInfo'),
+          subtitle: getErrorMessage(error) || t('failedSystemInfo'),
+          type: 'error'
+        });
+      }
+    }
+  );
+}
+
+export async function activate(context) {
+  await sigma.i18n.mergeFromPath('locales');
+
+  debugLog('[Example] Extension activated!', context.extensionPath);
+
+  const appVersion = await sigma.context.getAppVersion();
+  debugLog('[Example] App version:', appVersion);
+
+  const settings = await sigma.settings.getAll();
+  debugLog('[Example] Current settings:', settings);
+
+  settingsChangeDisposable = sigma.settings.onChange('showNotifications', (newValue, oldValue) => {
+    debugLog(`[Example] showNotifications changed from ${oldValue} to ${newValue}`);
+  });
+
+  await registerContextMenuHandlers(context);
+  await registerCommands(context);
+
+  debugLog('[Example] All handlers registered!');
+}
+
+export async function deactivate() {
+  if (settingsChangeDisposable) {
+    settingsChangeDisposable.dispose();
+    settingsChangeDisposable = null;
+  }
+}

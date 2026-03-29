@@ -1,0 +1,155 @@
+{
+  "$schema": "https://raw.githubusercontent.com/aleksey-hoffman/sigma-file-manager/main/packages/api/manifest.schema.json",
+  "id": "sigma.hello-world",
+  "name": "Example",
+  "previousName": "Hello World",
+  "version": "1.14.7",
+  "publisher": {
+    "name": "sigma-hub",
+    "url": "https://github.com/sigma-hub"
+  },
+  "repository": "https://github.com/sigma-hub/sfm-extension-example",
+  "license": "MIT",
+  "icon": "icon.png",
+  "categories": [
+    "Example"
+  ],
+  "tags": [
+    "example"
+  ],
+  "extensionType": "api",
+  "main": "index.js",
+  "permissions": [
+    "contextMenu",
+    "commands",
+    "notifications",
+    "dialogs",
+    "shell",
+    "clipboard"
+  ],
+  "contributes": {
+    "configuration": {
+      "title": "Example Extension Settings",
+      "properties": {
+        "showNotifications": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show notifications for actions"
+        },
+        "notificationDuration": {
+          "type": "number",
+          "default": 4000,
+          "minimum": 1000,
+          "maximum": 10000,
+          "description": "Duration of notifications in milliseconds"
+        }
+      }
+    },
+    "commands": [
+      {
+        "id": "show-context",
+        "title": "Show Current Context",
+        "description": "Shows current path and selection info using context API"
+      },
+      {
+        "id": "open-file-dialog",
+        "title": "Open File Dialog",
+        "description": "Opens a native file picker dialog"
+      },
+      {
+        "id": "show-settings",
+        "title": "Show Current Settings",
+        "description": "Displays the current extension settings"
+      },
+      {
+        "id": "demo-progress",
+        "title": "Demo Progress API",
+        "description": "Demonstrates the progress notification API with cancellation support"
+      },
+      {
+        "id": "deno-json-tools",
+        "title": "Run Deno JSON Tools",
+        "description": "Validates, formats, or minifies JSON using Deno with Windows PowerShell fallback"
+      },
+      {
+        "id": "runtime-diagnostics",
+        "title": "Show Runtime Diagnostics",
+        "description": "Displays runtime system info and includes PowerShell process diagnostics on Windows"
+      }
+    ],
+    "contextMenu": [
+      {
+        "id": "example-notification",
+        "title": "Example Notification",
+        "icon": "Bell",
+        "group": "extensions",
+        "order": 1
+      },
+      {
+        "id": "count-selected",
+        "title": "Count Selected Items",
+        "icon": "Hash",
+        "group": "extensions",
+        "order": 2,
+        "when": {
+          "selectionType": "multiple"
+        }
+      },
+      {
+        "id": "file-info",
+        "title": "Show File Details",
+        "icon": "Info",
+        "group": "extensions",
+        "order": 3,
+        "when": {
+          "selectionType": "single",
+          "entryType": "file"
+        }
+      },
+      {
+        "id": "copy-path",
+        "title": "Copy Path",
+        "icon": "Copy",
+        "group": "extensions",
+        "order": 4,
+        "when": {
+          "selectionType": "single"
+        }
+      },
+      {
+        "id": "analyze-file-deno",
+        "title": "Analyze File with Deno",
+        "icon": "FileSearch",
+        "group": "extensions",
+        "order": 5,
+        "when": {
+          "selectionType": "single",
+          "entryType": "file"
+        }
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "show-context",
+        "key": "ctrl+shift+s",
+        "when": "navigatorFocused"
+      },
+      {
+        "command": "copy-path",
+        "key": "ctrl+alt+c",
+        "when": "singleSelected"
+      },
+      {
+        "command": "demo-progress",
+        "key": "ctrl+shift+d",
+        "when": "always"
+      }
+    ]
+  },
+  "engines": {
+    "sigmaFileManager": ">=2.0.0"
+  },
+  "devDependencies": {
+    "@sigma-file-manager/api": "^1.2.0"
+  }
+}
